@@ -31,11 +31,7 @@ using ScottPlot.Plottables;
 
 
 #region Avalonia 加载字体
-using var simheiStream = File.OpenRead("./simhei.ttf");
-using var simsunStream = File.OpenRead("./simsun.ttc");
-var simhei = SKTypeface.FromStream(simheiStream);
-var simsun = SKTypeface.FromStream(simsunStream);
-int fontCount = SKFontManager.Default.FontFamilies.Count();
+
 static string GetSafeFont()
 {
     var installed = SKFontManager.Default.GetFontFamilies();
@@ -196,11 +192,6 @@ Grid CreateChartWithToolbars(out AvaPlot plot, List<(double[], double[])> datas,
 
 ScottPlot.Avalonia.AvaPlot plot1, plot2;
 
-
-
-
-decimal? counter = 0;
-
 // 2. 构建主窗口内容
 lifetime.MainWindow = new Window()
     .Width(1280).Height(800)
@@ -209,10 +200,10 @@ lifetime.MainWindow = new Window()
             .Rows("*,*") // 关键修改：定义两个等高的行，而非列
             .Children(
                 // 左侧图表组合
-                CreateChartWithToolbars(out plot1, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))] "波形图").Row(0),
+                CreateChartWithToolbars(out plot1, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))], "波形图").Row(0),
 
                 // 右侧图表组合
-                CreateChartWithToolbars(out plot2, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))] "频谱图·").Row(1),
+                CreateChartWithToolbars(out plot2, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))] ,"频谱图·").Row(1),
 
                 // --- 底部状态栏 (横跨两列) ---
                 new StackPanel()
