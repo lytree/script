@@ -1,0 +1,7 @@
+<Project>
+    <PropertyGroup>
+        <RepoRoot>$([System.IO.Path]::GetDirectoryName($([MSBuild]::GetPathOfFileAbove('.gitignore', '$(MSBuildThisFileDirectory)'))))\</RepoRoot>
+        <NoWarn>$(NoWarn);NU1507</NoWarn>
+        <NoWarn>1701;1702;CS1573;CS8600;CS8601;CS8602;CS8603;CS8604;CS8605;CS8618;CS8619;CS8620;CS8622;CS8625;CS8629;CS8714;CS1591;CS0649;CA2200;CS8767;CS1711</NoWarn>
+    </PropertyGroup>
+</Project>
