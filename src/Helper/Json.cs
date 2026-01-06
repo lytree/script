@@ -11,9 +11,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-namespace Helpers;
+namespace Helper;
 
-public static partial class Helper
+public static partial class Helpers
 {
 
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
@@ -26,7 +26,7 @@ public static partial class Helper
 
     };
 
-    static Helper()
+    static Helpers()
     {
         _jsonSerializerOptions.Converters.Add(new DateTimeJsonConverter());
         _jsonSerializerOptions.Converters.Add(new DateTimeOffsetJsonConverter());

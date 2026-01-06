@@ -17,9 +17,9 @@ using SixLabors.ImageSharp.Drawing;
 using SixLabors.ImageSharp.PixelFormats;
 
 
-namespace Helpers;
+namespace Helper;
 
-public static partial class Helper
+public static partial class Helpers
 {
     public static void VerticalMergeImage(string imageName, params byte[][] bitmaps)
     {
