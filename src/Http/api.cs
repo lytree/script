@@ -1,15 +1,16 @@
 #:package Refit@9.0.2
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property PublishTrimmed=false
-#:property Imports=$(RepoRoot)src/Helpers/Json.cs
+#:property Imports=../Helper/Json.cs
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Refit;
-
+using Helper;
 
 
 IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpClient()
 {
-    BaseAddress = new Uri("http://10.100.50.48:8085")
+    BaseAddress = new Uri("http://10.100.50.123:8085")
 });
 
 
@@ -72,17 +73,25 @@ IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpCli
 //     {"dataType",9},
 
 // });
-var data = await api.getCorrugationInfo(new()
+// var data = await api.getCorrugationInfo(new()
+// {
+//     {"lineId",1761706036647L},
+//     {"trainId","25102910473881669"},
+//     {"startTime",1749085361000L},
+//     {"endTime",1749087053001L},
+//     {"direction",0},
+// });
+// var data = await api.listCarriageAlarmByTrain(1761706036647L, "25102910473881669");
+
+
+var data = await api.forecastSurplusLifetime(new()
 {
     {"lineId",1761706036647L},
     {"trainId","25102910473881669"},
-    {"startTime",1749085361000L},
-    {"endTime",1749087053001L},
-    {"direction",0},
 });
-// var data = await api.listCarriageAlarmByTrain(1761706036647L, "25102910473881669");
 
-Console.WriteLine(JsonSerializer.Serialize(data, Helpers.Helper.JsonOptions));
+
+Console.WriteLine(JsonSerializer.Serialize(data, Helpers.JsonOptions));
 
 public interface IRealTimeControllerApi
 {
@@ -124,6 +133,10 @@ public interface IRealTimeControllerApi
 
     [Post("/tms/v1/data/getCorrugationInfo")]
     Task<dynamic> getCorrugationInfo(Dictionary<string, object> dir);
+
+
+    [Post("/tms/v1/forecast/forecastSurplusLifetime")]
+    Task<dynamic> forecastSurplusLifetime(Dictionary<string, object> dir);
 }
 
 
