@@ -16,7 +16,7 @@ public static partial class Helpers
 {
     public static readonly LabelStyle defaultLabelStyle = new()
     {
-        FontName = "SimHei",
+        FontName = "SimSun",
         FontSize = 18,
 
     };
@@ -26,7 +26,6 @@ public static partial class Helpers
     };
     public static readonly NumericAutomatic defaultNumberFormat = new()
     {
-        LabelFormatter = (dt) => dt.ToString("F3")
 
     };
     /// <summary>
@@ -38,10 +37,11 @@ public static partial class Helpers
     {
         Plot plt = new();
         plt.Font.Automatic();
-        plt.Font.Set("SimHei");
-        // plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
+        plt.Font.Set("SimSun");
+        plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Bottom.TickGenerator = defaultTimeFormat;
-        // plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Left.TickGenerator = defaultNumberFormat;
         foreach (var data in datas)
         {
@@ -61,10 +61,10 @@ public static partial class Helpers
     {
         Plot plt = new();
         plt.Font.Automatic();
-        plt.Font.Set("SimHei");
-        // plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
+        plt.Font.Set("SimSun"); plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Bottom.TickGenerator = defaultTimeFormat;
-        // plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Left.TickGenerator = defaultNumberFormat;
         foreach (var data in datas)
         {
@@ -84,12 +84,12 @@ public static partial class Helpers
     {
         Plot plt = new();
         plt.Font.Automatic();
-        plt.Font.Set("SimHei");
+        plt.Font.Set("SimSun");
         plt.Axes.Left.Min = 0;
-        plt.Axes.Left.Max = y.Max() * 1.1;
-        // plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
-        plt.Axes.Bottom.TickGenerator = defaultNumberFormat;
-        // plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Left.Max = y.Max() * 1.1; plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Bottom.TickGenerator = new FixedNumericManual(10, 0, x.Max() * 1.1);
+        plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Left.TickGenerator = defaultNumberFormat;
 
         var scatter = plt.Add.SignalXY([.. x], [.. y], color: new(System.Drawing.Color.FromArgb(61, 119, 255)));
@@ -105,17 +105,13 @@ public static partial class Helpers
     /// <returns></returns>
     public static byte[] WaveformChart(List<double> x, List<double> y, int width = 2250, int height = 350)
     {
-        Plot plt = new(); plt.Font.Automatic(); plt.Font.Set("SimHei");
-        // plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
-        plt.Axes.Bottom.TickGenerator = defaultNumberFormat;
-        // plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
+        Plot plt = new(); plt.Font.Automatic(); plt.Font.Set("SimSun");
+
+        plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Bottom.TickGenerator = new FixedNumericManual(10, 0, x.Max() * 1.1);
+        plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Left.TickGenerator = defaultNumberFormat;
-        // 固定 Y 轴最小值为0
-        plt.Axes.Left.Min = y.Min() * 1.1;
-
-        // 可选：最大值自动计算或手动设置
-        plt.Axes.Left.Max = y.Max() * 1.1;
-
         var scatter = plt.Add.SignalXY([.. x], [.. y], color: new(System.Drawing.Color.FromArgb(61, 119, 255)));
         scatter.MarkerShape = MarkerShape.None;
         return plt.GetImageBytes(width, height, ImageFormat.Png);
@@ -131,17 +127,13 @@ public static partial class Helpers
         Plot plt = new();
         plt.Font.Automatic();
 
-        plt.Font.Set("SimHei");
-        plt.Title(title, size: 20);
-        // plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
-        plt.Axes.Bottom.TickGenerator = defaultNumberFormat;
-        // plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
+        plt.Font.Set("SimSun");
+        plt.Title(title, size: 20); plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
+        plt.Axes.Bottom.TickGenerator = new FixedNumericManual(10, 0, x.Max() * 1.1);
+        plt.Axes.Left.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Left.TickGenerator = defaultNumberFormat;
-        // 固定 Y 轴最小值为0
-        plt.Axes.Left.Min = y.Min() * 1.1;
 
-        // 可选：最大值自动计算或手动设置
-        plt.Axes.Left.Max = y.Max() * 1.1;
 
         var scatter = plt.Add.SignalXY([.. x], [.. y], color: new(System.Drawing.Color.FromArgb(61, 119, 255)));
         scatter.MarkerShape = MarkerShape.None;
