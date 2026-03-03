@@ -9,6 +9,9 @@ using Newtonsoft.Json;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
+
+
+
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
@@ -37,6 +40,26 @@ using var factory = LoggerFactory.Create(logging =>
     // logging.AddZLoggerConsole(options => options.UseJsonFormatter());
 });
 var logger = factory.CreateLogger("tdl");
+
+
+
+// 获取用户主目录，例如 C:\Users\Administrator
+string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+// 拼接 .tdl 目录
+string tdlRoot = Path.Combine(userProfile, ".tdl");
+
+// 如果需要区分账号（可选），可以再加一层子目录
+string databasePath = Path.Combine(tdlRoot, "db");
+string filesPath = Path.Combine(tdlRoot, "files");
+
+// 确保目录存在
+if (!Directory.Exists(tdlRoot))
+{
+    Directory.CreateDirectory(tdlRoot);
+    logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
+}
+
 
 ManualResetEventSlim ReadyToAuthenticate = new();
 bool _authNeeded = false;
@@ -69,7 +92,11 @@ using (var client = new TdClient())
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
 
-        await ConvertForwardToCopy(client);
+        // await ConvertForwardToCopy(client);
+        // 参数：fileId, 优先级(1-32), 偏移量, 限制, 是否同步
+        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/lsp_gayQ/109379");
+
+        await client.DownloadFileAsync(fileId, 1, 0, 0, false);
 
         Console.WriteLine("Press ENTER to exit from application");
         Console.ReadLine();
@@ -84,7 +111,7 @@ async Task HandleAuthentication(TdClient client)
     // Setting phone number
     await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
     {
-        PhoneNumber = Environment.GetEnvironmentVariable("phone")
+        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
     });
 
     // Telegram servers will send code to us
@@ -120,7 +147,6 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
         case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitTdlibParameters }:
             // TdLib creates database in the current directory.
             // so create separate directory and switch to that dir.
-            var filesLocation = Path.Combine(AppContext.BaseDirectory, "db");
             await client.ExecuteAsync(new TdApi.SetTdlibParameters
             {
                 ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
@@ -128,9 +154,14 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
                 DeviceModel = "PC",
                 SystemLanguageCode = "en",
                 ApplicationVersion = "1.0.0",
-                DatabaseDirectory = filesLocation,
-                FilesDirectory = filesLocation,
-                // More parameters available!
+                // 数据库放在用户目录下的 .tdl/db
+                DatabaseDirectory = Path.Combine(tdlRoot, "db"),
+
+                // 下载的文件放在用户目录下的 .tdl/files
+                FilesDirectory = Path.Combine(tdlRoot, "files"),
+                UseFileDatabase = true,
+                UseChatInfoDatabase = true,
+                UseMessageDatabase = true,
             });
             logger.ZLogInformation($"正在尝试连接代理...");
             var proxyType = new TdApi.ProxyType.ProxyTypeSocks5
@@ -163,7 +194,25 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
         case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
             // You may trigger additional event on connection state change
             break;
+        // 核心：处理文件状态更新
+        case TdApi.Update.UpdateFile updateFile:
+            var file = updateFile.File;
 
+            if (file.Local.IsDownloadingActive)
+            {
+                // 记录下载进度
+                double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
+                logger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
+            }
+            else if (file.Local.IsDownloadingCompleted)
+            {
+                // 下载完成，Path 就是磁盘上的绝对路径
+                logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
+
+                // 这里可以触发你自己的业务逻辑，比如“文件下载后的自动处理”
+                // OnDownloadFinished(file);
+            }
+            break;
         default:
             // ReSharper disable once EmptyStatement
             ;
@@ -251,7 +300,6 @@ async Task CleanSavedMessages(TdClient client)
         await Task.Delay(200);
     }
 
-    logger.ZLogInformation($"清理完成！总共移除违规消息: {totalDeleted} 条");
 }
 
 async Task ConvertForwardToCopy(TdClient client)
@@ -332,4 +380,72 @@ async Task ConvertForwardToCopy(TdClient client)
 
     }
 
+}
+
+void OnDownloadFinished(TdApi.File file)
+{
+    string sourcePath = file.Local.Path;
+    string fileName = Path.GetFileName(sourcePath);
+    string targetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonVideos), "Downloads", fileName);
+
+    try
+    {
+        // 确保目标目录存在
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
+
+        // 移动或复制文件到你的业务文件夹
+        File.Copy(sourcePath, targetPath, true);
+
+        logger.ZLogInformation($"【业务处理】文件已归档至: {targetPath}");
+    }
+    catch (Exception ex)
+    {
+        logger.ZLogError(ex, $"处理下载完成的文件时出错");
+    }
+}
+/// <summary>
+/// 解析 Telegram 链接并提取其中的核心 FileId
+/// </summary>
+/// <param name="link">例如 https://t.me/R_E_STUDIO/21221</param>
+/// <returns>返回 FileId，如果未找到则返回 0</returns>
+async Task<int> GetFileIdFromLinkAsync(TdClient client, string link)
+{
+    try
+    {
+        // 1. 调用 TDLib 内置的链接解析器
+        var linkInfo = await client.GetMessageLinkInfoAsync(link);
+
+        if (linkInfo.Message == null)
+        {
+            logger.ZLogWarning($"链接解析成功，但未找到对应的消息内容: {link}");
+            return 0;
+        }
+
+        var message = linkInfo.Message;
+
+        // 2. 提取 FileId (根据内容类型)
+        int fileId = message.Content switch
+        {
+            TdApi.MessageContent.MessageDocument d => d.Document.Document_.Id,
+            TdApi.MessageContent.MessageVideo v => v.Video.Video_.Id,
+            TdApi.MessageContent.MessagePhoto p => p.Photo.Sizes.LastOrDefault()?.Photo.Id ?? 0,
+            TdApi.MessageContent.MessageAudio a => a.Audio.Audio_.Id,
+            TdApi.MessageContent.MessageAnimation ani => ani.Animation.Animation_.Id,
+            TdApi.MessageContent.MessageVideoNote vn => vn.VideoNote.Video.Id,
+            TdApi.MessageContent.MessageVoiceNote vce => vce.VoiceNote.Voice.Id,
+            _ => 0
+        };
+
+        if (fileId == 0)
+        {
+            logger.ZLogWarning($"消息 ID {message.Id} 中不包含可下载的文件。类型: {message.Content.GetType().Name}");
+        }
+
+        return fileId;
+    }
+    catch (TdException ex)
+    {
+        logger.ZLogError(ex, $"解析链接时发生 TDLib 错误: {link}");
+        return 0;
+    }
 }
