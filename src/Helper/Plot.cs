@@ -86,7 +86,8 @@ public static partial class Helpers
         plt.Font.Automatic();
         plt.Font.Set("SimSun");
         plt.Axes.Left.Min = 0;
-        plt.Axes.Left.Max = y.Max() * 1.1; plt.Axes.Margins(0.02, 0.02);
+        plt.Axes.Left.Max = y.Max() * 1.1;
+        plt.Axes.Margins(0.02, 0.02);
         plt.Axes.Bottom.TickLabelStyle = defaultLabelStyle;
         plt.Axes.Bottom.TickGenerator = new FixedNumericManual(10, 0, x.Max() * 1.1);
         plt.Axes.Left.TickLabelStyle = defaultLabelStyle;

@@ -46,12 +46,12 @@ foreach (var machine in machines)
     var vibpositions = Data.Config.GetAllVibPosition(config, machine.MachineId);
     foreach (var position in vibpositions)
     {
-        createImage(machine, position, new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), 1000, 1800);
+        createImage(machine, position, new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), 1000, 1800);
     }
     var rockpositions = Data.Config.GetAllRockPosition(config, machine.MachineId);
     foreach (var position in rockpositions)
     {
-        createImage(machine, position, new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), 1000, 1800);
+        createImage(machine, position, new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), 1000, 1800);
     }
 }
 
