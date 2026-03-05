@@ -32,6 +32,7 @@ AppBuilder.Configure<Application>()
     .SetupWithLifetime(lifetime);
 
 
+AvaPlot plot1, plot2;
 
 
 
