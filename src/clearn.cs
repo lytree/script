@@ -1,7 +1,7 @@
 using System.IO;
 
 // 设置你要清理的根目录路径
-string targetPath = @"";
+string targetPath = @"I:\Pictures\Pure_Media";
 
 if (Directory.Exists(targetPath))
 {
