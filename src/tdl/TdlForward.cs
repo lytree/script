@@ -2,7 +2,7 @@
 #:package tdlib.native@1.8.60
 #:package tdlib.native.win-x64@1.8.60
 #:package ZLogger@2.5.10
-
+#:package YLFramework.ZLogging@1.0.1
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic;
 using Newtonsoft.Json;
@@ -10,23 +10,18 @@ using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-
+/// <summary>
+/// 将链接转发消息转换为深度copy
+/// </summary>
+/// <value></value>
 
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
 
     // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerConsole(options =>
-    {
-        options.CaptureThreadInfo = true;
-        options.UsePlainTextFormatter(formatter =>
-   {
-       formatter.SetPrefixFormatter($"{0} | {1:short} | ({2}) |", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel, info.Category));
-       //    formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-       formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-   });
-    });
+    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
+
     logging.AddZLoggerFile("tdl.log", options =>
     {
         options.UsePlainTextFormatter(formatter =>
@@ -92,11 +87,8 @@ using (var client = new TdClient())
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
 
-        // await ConvertForwardToCopy(client);
-        // 参数：fileId, 优先级(1-32), 偏移量, 限制, 是否同步
-        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/lsp_gayQ/109379");
+        await ProcessLinkQueue(client, ["https://t.me/lingyayuming/133224"]);
 
-        await client.DownloadFileAsync(fileId, 1, 0, 0, false);
 
         Console.WriteLine("Press ENTER to exit from application");
         Console.ReadLine();
@@ -246,206 +238,39 @@ async IAsyncEnumerable<TdApi.Chat> GetChannels(TdClient client, int limit)
         }
     }
 }
-async Task CleanSavedMessages(TdClient client)
+async Task ProcessLinkQueue(TdClient client, List<string> links)
 {
-
-    var clearn = "This channel can’t be displayed";
-
+    // 获取当前账号的“收藏夹”ChatId (通常是自己的 UserID)
     var me = await client.GetMeAsync();
+    long myId = me.Id;
 
-    long chatId = me.Id;
-
-    long lastMessageId = 0;
-    int totalDeleted = 0;
-    List<long> charts = [];
-    logger.ZLogInformation($"开始扫描收藏夹...");
-    TdApi.Chat savedMessagesChat = await client.CreatePrivateChatAsync(chatId, false);
-    while (true)
+    foreach (var link in links)
     {
-        var history = await client.GetChatHistoryAsync(chatId, lastMessageId, 0, 500, false);
-        Console.WriteLine($"本次拉取数量: {history.Messages_.Length}");
-        var toDelete = new List<long>();
-
-        foreach (var msg in history.Messages_)
+        try
         {
-            lastMessageId = msg.Id; // 更新偏移量
-            if (msg.Content is TdLib.TdApi.MessageContent.MessageText text && text.Text is TdLib.TdApi.FormattedText form)
-            {
+            logger.ZLogInformation($"正在处理链接: {link}");
 
-                logger.ZLogInformation($"{msg.Id} {msg.ChatId} {form.Text} {form.Text.Contains(clearn)}");
-                if (form.Text.Contains(clearn))
-                {
-                    toDelete.Add(msg.Id);
-                }
+            // 1. 解析链接获取原始消息
+            var linkInfo = await client.GetMessageLinkInfoAsync(link);
+            if (linkInfo.Message == null) continue;
 
-            }
+            var msg = linkInfo.Message;
 
+            // 2. 执行“深度 Copy”到收藏夹
+            var result = await client.ForwardMessagesAsync(
+                chatId: myId,              // 目标：还是收藏夹
+                fromChatId: msg.ChatId,          // 来源：从收藏夹里读
+                messageIds: [msg.Id],
+                sendCopy: true,            // 关键：剥离来源信息，实现深度拷贝
+                removeCaption: false
+            );
 
-            // 3. 识别失效消息（通常是转发自已被封禁的频道）
+            logger.ZLogInformation($"已深度 Copy 到收藏夹。");
 
         }
-
-        // 4. 执行批量删除
-        if (toDelete.Count > 0)
+        catch (Exception ex)
         {
-            await client.DeleteMessagesAsync(chatId, [.. toDelete], true);
-            totalDeleted += toDelete.Count;
-            logger.ZLogInformation($"本轮清理了 {toDelete.Count} 条，累计：{totalDeleted}");
+            logger.ZLogError(ex, $"处理链接 {link} 时出错");
         }
-
-        // 如果获取到的消息少于请求数，说明处理完了
-        // if (history.Messages_.Length <= 0) break;
-
-        // 适当延迟防止被电报限流
-        await Task.Delay(200);
-    }
-
-}
-
-async Task ConvertForwardToCopy(TdClient client)
-{
-
-
-    var me = await client.GetMeAsync();
-
-    long chatId = me.Id;
-
-    long lastMessageId = 0;
-    int totalDeleted = 0;
-    List<long> charts = [];
-    logger.ZLogInformation($"开始扫描收藏夹...");
-    TdApi.Chat savedMessagesChat = await client.CreatePrivateChatAsync(chatId, false);
-    while (true)
-    {
-        var history = await client.GetChatHistoryAsync(chatId, lastMessageId, 0, 100, false);
-        Console.WriteLine($"本次拉取数量: {history.Messages_.Length}");
-
-        foreach (var msg in history.Messages_)
-        {
-            try
-            {
-                lastMessageId = msg.Id; // 更新偏移量
-                                        // 只有转发的消息才有必要转换
-                if (msg.ForwardInfo == null) continue;
-
-                // 调用转发接口，但开启 SendCopy
-                var result = await client.ForwardMessagesAsync(
-                    chatId: chatId,              // 目标：还是收藏夹
-                    fromChatId: chatId,          // 来源：从收藏夹里读
-                    messageIds: [msg.Id],
-                    sendCopy: true,            // 关键：剥离来源信息，实现深度拷贝
-                    removeCaption: false
-                );
-
-                if (result.Messages_.Length > 0)
-                {
-                    if (result.Messages_[0].SendingState is TdApi.MessageSendingState.MessageSendingStateFailed)
-                    {
-                        logger.ZLogWarning($"转换失败：服务器拒绝了该消息的 SendCopy (ID: {msg.Id})");
-                        // 这种情况下不要删除原消息
-                        continue;
-                    }
-
-                    // 进阶判断：检查内容是否有效
-                    // 如果源频道炸了，SendCopy 出来的消息内容往往是 MessageUnsupported 或内容为空
-                    if (result.Messages_[0].Content is TdApi.MessageContent.MessageUnsupported)
-                    {
-                        logger.ZLogWarning($"转换失败：内容不受支持或已丢失 (ID: {msg.Id})");
-                        // 这种占位符没用，删掉它
-
-                        continue;
-                    }
-                    await Task.Delay(2000);
-                    // 拷贝成功后，删除原有的转发版本
-                    await client.DeleteMessagesAsync(chatId, [msg.Id], true);
-
-                    logger.ZLogInformation($"成功转换消息 {msg.Id} 为深度拷贝版本。新 ID: {result.Messages_[0].Id}");
-                }
-            }
-            catch (TdException ex)
-            {
-                // 如果原频道已经炸了，ForwardInfo 虽然在，但内容可能读不到了
-                logger.ZLogError(ex, $"无法转换消息 {msg.Id}，原频道可能已完全封禁或内容受限。");
-            }
-        }
-
-        // 如果获取到的消息少于请求数，说明处理完了
-        // if (history.Messages_.Length <= 0) break;
-
-        // 适当延迟防止被电报限流
-        await Task.Delay(200);
-
-
-
-
-    }
-
-}
-
-void OnDownloadFinished(TdApi.File file)
-{
-    string sourcePath = file.Local.Path;
-    string fileName = Path.GetFileName(sourcePath);
-    string targetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonVideos), "Downloads", fileName);
-
-    try
-    {
-        // 确保目标目录存在
-        Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-
-        // 移动或复制文件到你的业务文件夹
-        File.Copy(sourcePath, targetPath, true);
-
-        logger.ZLogInformation($"【业务处理】文件已归档至: {targetPath}");
-    }
-    catch (Exception ex)
-    {
-        logger.ZLogError(ex, $"处理下载完成的文件时出错");
-    }
-}
-/// <summary>
-/// 解析 Telegram 链接并提取其中的核心 FileId
-/// </summary>
-/// <param name="link">例如 https://t.me/R_E_STUDIO/21221</param>
-/// <returns>返回 FileId，如果未找到则返回 0</returns>
-async Task<int> GetFileIdFromLinkAsync(TdClient client, string link)
-{
-    try
-    {
-        // 1. 调用 TDLib 内置的链接解析器
-        var linkInfo = await client.GetMessageLinkInfoAsync(link);
-
-        if (linkInfo.Message == null)
-        {
-            logger.ZLogWarning($"链接解析成功，但未找到对应的消息内容: {link}");
-            return 0;
-        }
-
-        var message = linkInfo.Message;
-
-        // 2. 提取 FileId (根据内容类型)
-        int fileId = message.Content switch
-        {
-            TdApi.MessageContent.MessageDocument d => d.Document.Document_.Id,
-            TdApi.MessageContent.MessageVideo v => v.Video.Video_.Id,
-            TdApi.MessageContent.MessagePhoto p => p.Photo.Sizes.LastOrDefault()?.Photo.Id ?? 0,
-            TdApi.MessageContent.MessageAudio a => a.Audio.Audio_.Id,
-            TdApi.MessageContent.MessageAnimation ani => ani.Animation.Animation_.Id,
-            TdApi.MessageContent.MessageVideoNote vn => vn.VideoNote.Video.Id,
-            TdApi.MessageContent.MessageVoiceNote vce => vce.VoiceNote.Voice.Id,
-            _ => 0
-        };
-
-        if (fileId == 0)
-        {
-            logger.ZLogWarning($"消息 ID {message.Id} 中不包含可下载的文件。类型: {message.Content.GetType().Name}");
-        }
-
-        return fileId;
-    }
-    catch (TdException ex)
-    {
-        logger.ZLogError(ex, $"解析链接时发生 TDLib 错误: {link}");
-        return 0;
     }
 }
