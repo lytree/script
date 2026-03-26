@@ -8,26 +8,18 @@ using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-Environment.SetEnvironmentVariable("tdl_api_id", "21397071", EnvironmentVariableTarget.Process);
-Environment.SetEnvironmentVariable("tdl_api_hash", "a9a9265fcb00c133ef54bbc1e52dae9e", EnvironmentVariableTarget.Process);
-Environment.SetEnvironmentVariable("tdl_phone", "+8618103812972", EnvironmentVariableTarget.Process);
-
+/// <summary>
+/// 清理收藏的失效信息
+/// </summary>
+/// <value></value>
 
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
     logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
     // Add ZLogger provider to ILoggingBuilder
-//     logging.AddZLoggerConsole(options =>
-//     {
-//         options.CaptureThreadInfo = true;
-//         options.UsePlainTextFormatter(formatter =>
-//    {
-//        formatter.SetPrefixFormatter($"{0} | {1:short} | ({2}) |", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel, info.Category));
-//        //    formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-//        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-//    });
-    // });
+    // logging.AddZLoggerConsoleWithColors();
+    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
     logging.AddZLoggerFile("tdl.log", options =>
     {
         options.UsePlainTextFormatter(formatter =>
@@ -93,11 +85,7 @@ using (var client = new TdClient())
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
 
-        // await ConvertForwardToCopy(client);
-        // 参数：fileId, 优先级(1-32), 偏移量, 限制, 是否同步
-        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/R_E_STUDIO/21221");
-
-        await client.DownloadFileAsync(fileId, 12, 0, 0, false);
+        await CleanSavedMessages(client);
 
         Console.WriteLine("Press ENTER to exit from application");
         Console.ReadLine();
