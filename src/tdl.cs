@@ -1,32 +1,33 @@
 #:package TDLib@1.8.60
 #:package tdlib.native@1.8.60
-#:package tdlib.native.win-x64@1.8.60
+// #:package tdlib.native.win-x64@1.8.60
 #:package ZLogger@2.5.10
-
+#:package YLFramework.ZLogging@1.0.1
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
-using Newtonsoft.Json;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
+Environment.SetEnvironmentVariable("tdl_api_id", "21397071", EnvironmentVariableTarget.Process);
+Environment.SetEnvironmentVariable("tdl_api_hash", "a9a9265fcb00c133ef54bbc1e52dae9e", EnvironmentVariableTarget.Process);
+Environment.SetEnvironmentVariable("tdl_phone", "+8618103812972", EnvironmentVariableTarget.Process);
 
 
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
-
+    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
     // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerConsole(options =>
-    {
-        options.CaptureThreadInfo = true;
-        options.UsePlainTextFormatter(formatter =>
-   {
-       formatter.SetPrefixFormatter($"{0} | {1:short} | ({2}) |", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel, info.Category));
-       //    formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-       formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-   });
-    });
+//     logging.AddZLoggerConsole(options =>
+//     {
+//         options.CaptureThreadInfo = true;
+//         options.UsePlainTextFormatter(formatter =>
+//    {
+//        formatter.SetPrefixFormatter($"{0} | {1:short} | ({2}) |", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel, info.Category));
+//        //    formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
+//        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+//    });
+    // });
     logging.AddZLoggerFile("tdl.log", options =>
     {
         options.UsePlainTextFormatter(formatter =>
@@ -94,9 +95,9 @@ using (var client = new TdClient())
 
         // await ConvertForwardToCopy(client);
         // 参数：fileId, 优先级(1-32), 偏移量, 限制, 是否同步
-        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/lsp_gayQ/109379");
+        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/R_E_STUDIO/21221");
 
-        await client.DownloadFileAsync(fileId, 1, 0, 0, false);
+        await client.DownloadFileAsync(fileId, 12, 0, 0, false);
 
         Console.WriteLine("Press ENTER to exit from application");
         Console.ReadLine();
@@ -111,7 +112,7 @@ async Task HandleAuthentication(TdClient client)
     // Setting phone number
     await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
     {
-        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
+        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.Process)
     });
 
     // Telegram servers will send code to us
@@ -149,8 +150,8 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
             // so create separate directory and switch to that dir.
             await client.ExecuteAsync(new TdApi.SetTdlibParameters
             {
-                ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
-                ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
+                ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.Process)),
+                ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.Process),
                 DeviceModel = "PC",
                 SystemLanguageCode = "en",
                 ApplicationVersion = "1.0.0",
@@ -168,7 +169,7 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
             {
             };
             // 参数说明：服务器地址, 端口, 是否启用
-            var proxy = await client.AddProxyAsync("127.0.0.1", 7897, true, proxyType);
+            var proxy = await client.AddProxyAsync("127.0.0.1", 10808, true, proxyType);
 
             // 启用该代理
             await client.EnableProxyAsync(proxy.Id);
@@ -202,7 +203,7 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
             {
                 // 记录下载进度
                 double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
-                logger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
+                logger.ZLogInformation($"文件 {file.Id} 进度: {percent:F1}%");
             }
             else if (file.Local.IsDownloadingCompleted)
             {
