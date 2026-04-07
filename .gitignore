@@ -362,3 +362,10 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /src/Data/*
+/data/*
+/image/*
+src/phm/*
+src/Leaf/*
+src/Http/*
+src/Bytes/huaneng.cs
+src/Http/api.cs
