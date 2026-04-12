@@ -6,7 +6,6 @@ Standalone C# script collection - **no .csproj/.sln build files**. Scripts run d
 ## Constraints
 - **Never create .csproj or .sln files** - use file-based C# scripts only
 - Run scripts via: `dotnet run Path/To/Script.cs`
-- Or compile manually: `csc script.cs && ./script.exe` (Windows)
 
 ## Directory Structure
 - `data/` - Default storage location for generated data
@@ -22,5 +21,5 @@ Standalone C# script collection - **no .csproj/.sln build files**. Scripts run d
 - `src/` (root) - Miscellaneous scripts (clearn, rename, FixImages, etc.)
 
 ## Notes
+- Scripts use dotnet-script directives: `#:package PackageName@*` for deps, `#:property Key=Value` for options
 - Directory.Build.props suppresses many nullable warnings (CS8600-8625, etc.)
-- Some .gitignore entries reference project-specific paths that no longer exist
