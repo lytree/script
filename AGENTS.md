@@ -1,15 +1,15 @@
 # AGENTS.md
 
 ## Repository Type
-Standalone C# script collection - **no .csproj/.sln build files**. Scripts run directly via `dotnet script` or as single-file executables.
+Standalone C# script collection - **no .csproj/.sln build files**. Scripts run directly via dotnet-script.
 
 ## Constraints
 - **Never create .csproj or .sln files** - use file-based C# scripts only
-- Run scripts via: `dotnet run Path/To/Script.cs`
+- Run scripts via: `dotnet run Path/To/Script.cs` (not `dotnet script`)
+- Each script declares its own dependencies via `#:package PackageName@*` directive
 
 ## Directory Structure
-- `data/` - Default storage location for generated data
-- `template/` - CLI templates (copy to create new CLI tools)
+- `src/` (root) - Miscellaneous scripts (clearn, rename, FixImages, etc.)
 - `src/tdl/` - Telegram DL scripts (TdlDownload, TdlForward, etc.)
 - `src/Downloader/` - M3u8 video downloader
 - `src/Avalonia/` - GUI apps (ScottPlot, aval)
@@ -18,8 +18,10 @@ Standalone C# script collection - **no .csproj/.sln build files**. Scripts run d
 - `src/Screen/` - Screen capture utilities
 - `src/Http/` - HTTP API utilities
 - `src/AI/` - AI utilities
-- `src/` (root) - Miscellaneous scripts (clearn, rename, FixImages, etc.)
+- `data/` - Default storage for generated data
+- `template/cli.cs` - CLI template (copy to create new tools)
 
 ## Notes
-- Scripts use dotnet-script directives: `#:package PackageName@*` for deps, `#:property Key=Value` for options
-- Directory.Build.props suppresses many nullable warnings (CS8600-8625, etc.)
+- Dependencies in scripts use dotnet-script directives at the top: `#:package`, `#:property`
+- Directory.Build.props suppresses nullable warnings (CS8600-8625, etc.)
+- No test framework or CI - run scripts directly to verify
