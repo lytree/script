@@ -1,43 +1,57 @@
-#:package TDLib@1.8.60
-#:package tdlib.native@1.8.60
-#:package tdlib.native.win-x64@1.8.60
-#:package ZLogger@2.5.10
-#:package YLFramework.ZLogging@1.0.1
+#:package TDLib@*
+#:package tdlib.native@*
+#:package tdlib.native.win-x64@*
+#:package System.CommandLine@*
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
+#:package Microsoft.Extensions.Logging@*
+#:package ZLogger@*
+#:package YLFramework.ZLogging@1.0.3-alpha.3
+using System.CommandLine;
+using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
-using Newtonsoft.Json;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-/// <summary>
-/// 将转发消息转换为深度copy
-/// </summary>
-/// <value></value>
-
+#region
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
 
     // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
+    logging.AddZLoggerSpectreConsole();
 
-    logging.AddZLoggerFile("tdl.log", options =>
+    logging.AddZLoggerFile("tdl.log", (options) =>
     {
-        options.UsePlainTextFormatter(formatter =>
-    {
-        formatter.SetPrefixFormatter($"{0}|{1}|", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel));
-        formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        options.UsePlainTextFormatter((formatter) =>
+        {
+            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
+               (in template, in i) =>
+               {
+                   template.Format(
+                               i.Timestamp,
+                               i.LogLevel,
+                               i.Category);
+               });
+            formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        });
     });
-    });
-    // Output Structured Logging, setup options
-    // logging.AddZLoggerConsole(options => options.UseJsonFormatter());
 });
 var logger = factory.CreateLogger("tdl");
+#endregion
 
 
 
+
+
+
+var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Environment.CurrentDirectory, "data") };
+var optionsUrls = new Option<string[]>("--urls") { Required = true };
+var rootCommand = new RootCommand { optionOutput, optionsUrls };
+
+var parseResult = rootCommand.Parse(args);
+#region 全局环境变量
 // 获取用户主目录，例如 C:\Users\Administrator
 string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -46,7 +60,7 @@ string tdlRoot = Path.Combine(userProfile, ".tdl");
 
 // 如果需要区分账号（可选），可以再加一层子目录
 string databasePath = Path.Combine(tdlRoot, "db");
-string filesPath = Path.Combine(tdlRoot, "files");
+
 
 // 确保目录存在
 if (!Directory.Exists(tdlRoot))
@@ -55,10 +69,22 @@ if (!Directory.Exists(tdlRoot))
     logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
 }
 
+#endregion
+
+
 
 ManualResetEventSlim ReadyToAuthenticate = new();
 bool _authNeeded = false;
 bool _passwordNeeded = false;
+
+
+
+/// <summary>
+/// 将转发消息转换为深度copy
+/// </summary>
+/// <value></value>
+
+
 using (var client = new TdClient())
 {
     client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
@@ -86,12 +112,15 @@ using (var client = new TdClient())
 
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+        foreach (var url in parseResult.GetValue(optionsUrls))
+        {
+            var fileId = await GetFileIdFromLinkAsync(client, url);
 
-        var fileId = await GetFileIdFromLinkAsync(client, "https://t.me/R_E_STUDIO/21233");
+            await client.DownloadFileAsync(fileId, 12, 0, 0, false);
+        }
 
-        await client.DownloadFileAsync(fileId, 12, 0, 0, false);
 
-        Console.WriteLine("Press ENTER to exit from application");
+        logger.WriteMarkup("Press ENTER to exit from application");
         Console.ReadLine();
     }
     catch (Exception e)
@@ -99,6 +128,9 @@ using (var client = new TdClient())
         Console.WriteLine(e);
     }
 }
+
+
+
 async Task HandleAuthentication(TdClient client)
 {
     // Setting phone number
@@ -154,17 +186,14 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
                 DatabaseDirectory = Path.Combine(tdlRoot, "db"),
 
                 // 下载的文件放在用户目录下的 .tdl/files
-                FilesDirectory = Path.Combine(tdlRoot, "files"),
+                FilesDirectory = Path.Combine(parseResult.GetValue(optionOutput), "files"),
                 UseFileDatabase = true,
                 UseChatInfoDatabase = true,
                 UseMessageDatabase = true,
             });
             logger.ZLogInformation($"正在尝试连接代理...");
-            var proxyType = new TdApi.ProxyType.ProxyTypeSocks5
-            {
-            };
             // 参数说明：服务器地址, 端口, 是否启用
-            var proxy = await client.AddProxyAsync("127.0.0.1", 7897, true, proxyType);
+            var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
 
             // 启用该代理
             await client.EnableProxyAsync(proxy.Id);

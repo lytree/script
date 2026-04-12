@@ -1,8 +1,12 @@
-#:package TDLib@1.8.60
-#:package tdlib.native@1.8.60
-#:package tdlib.native.win-x64@1.8.60
-#:package ZLogger@2.5.10
-#:package YLFramework.ZLogging@1.0.1
+#:package TDLib@*
+#:package tdlib.native@*
+#:package tdlib.native.win-x64@*
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
+#:package Microsoft.Extensions.Logging@*
+#:package ZLogger@*
+#:package YLFramework.ZLogging@1.0.3-alpha.3
+using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic;
 using Newtonsoft.Json;
@@ -20,24 +24,27 @@ using var factory = LoggerFactory.Create(logging =>
     logging.SetMinimumLevel(LogLevel.Trace);
 
     // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
+    logging.AddZLoggerSpectreConsole();
 
-    logging.AddZLoggerFile("tdl.log", options =>
+    logging.AddZLoggerFile("tdl.log", (options) =>
     {
-        options.UsePlainTextFormatter(formatter =>
-    {
-        formatter.SetPrefixFormatter($"{0}|{1}|", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel));
-        formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        options.UsePlainTextFormatter((formatter) =>
+        {
+            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
+               (in MessageTemplate template, in LogInfo i) =>
+               {
+                   template.Format(
+                               i.Timestamp,
+                               i.LogLevel,
+                               i.Category);
+               });
+        });
     });
-    });
-    // Output Structured Logging, setup options
-    // logging.AddZLoggerConsole(options => options.UseJsonFormatter());
 });
 var logger = factory.CreateLogger("tdl");
 
 
-
+Console.WriteLine(Environment.CurrentDirectory);
 // 获取用户主目录，例如 C:\Users\Administrator
 string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -87,7 +94,7 @@ using (var client = new TdClient())
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
 
-        await ProcessLinkQueue(client, ["https://t.me/lingyayuming/133224"]);
+        await ProcessLinkQueue(client, ["https://t.me/atsJoe"]);
 
 
         Console.WriteLine("Press ENTER to exit from application");
