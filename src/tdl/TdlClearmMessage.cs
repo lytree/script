@@ -1,8 +1,12 @@
-#:package TDLib@1.8.60
-#:package tdlib.native@1.8.60
-// #:package tdlib.native.win-x64@1.8.60
-#:package ZLogger@2.5.10
-#:package YLFramework.ZLogging@1.0.1
+#:package TDLib@*
+#:package tdlib.native@*
+#:package tdlib.native.win-x64@*
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
+#:package Microsoft.Extensions.Logging@*
+#:package ZLogger@*
+#:package YLFramework.ZLogging@1.0.3-alpha.3
+using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using TdLib;
 using TdLib.Bindings;
@@ -16,21 +20,25 @@ using ZLogger;
 using var factory = LoggerFactory.Create(logging =>
 {
     logging.SetMinimumLevel(LogLevel.Trace);
-    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
+
     // Add ZLogger provider to ILoggingBuilder
-    // logging.AddZLoggerConsoleWithColors();
-    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
-    logging.AddZLoggerFile("tdl.log", options =>
+    logging.AddZLoggerSpectreConsole();
+
+    logging.AddZLoggerFile("tdl.log", (options) =>
     {
-        options.UsePlainTextFormatter(formatter =>
-    {
-        formatter.SetPrefixFormatter($"{0}|{1}|", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel));
-        formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        options.UsePlainTextFormatter((formatter) =>
+        {
+            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
+               (in template, in i) =>
+               {
+                   template.Format(
+                               i.Timestamp,
+                               i.LogLevel,
+                               i.Category);
+               });
+            formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        });
     });
-    });
-    // Output Structured Logging, setup options
-    // logging.AddZLoggerConsole(options => options.UseJsonFormatter());
 });
 var logger = factory.CreateLogger("tdl");
 

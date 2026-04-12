@@ -1,11 +1,13 @@
-#:package TDLib@1.8.60
-#:package tdlib.native@1.8.60
-#:package tdlib.native.win-x64@1.8.60
-#:package ZLogger@2.5.10
-#:package YLFramework.ZLogging@1.0.1
+#:package TDLib@*
+#:package tdlib.native@*
+#:package tdlib.native.win-x64@*
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
+#:package Microsoft.Extensions.Logging@*
+#:package ZLogger@*
+#:package YLFramework.ZLogging@1.0.3-alpha.3
+using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
-using Newtonsoft.Json;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
@@ -20,19 +22,23 @@ using var factory = LoggerFactory.Create(logging =>
     logging.SetMinimumLevel(LogLevel.Trace);
 
     // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerConsoleWithColors((b) => { b.LogVerbosity = LogVerbosity.DataTimeUtcLogLevelCategory; });
+    logging.AddZLoggerSpectreConsole();
 
-    logging.AddZLoggerFile("tdl.log", options =>
+    logging.AddZLoggerFile("tdl.log", (options) =>
     {
-        options.UsePlainTextFormatter(formatter =>
-    {
-        formatter.SetPrefixFormatter($"{0}|{1}|", (in MessageTemplate template, in LogInfo info) => template.Format(info.Timestamp, info.LogLevel));
-        formatter.SetSuffixFormatter($" ({0})", (in MessageTemplate template, in LogInfo info) => template.Format(info.Category));
-        formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        options.UsePlainTextFormatter((formatter) =>
+        {
+            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
+               (in template, in i) =>
+               {
+                   template.Format(
+                               i.Timestamp,
+                               i.LogLevel,
+                               i.Category);
+               });
+            formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+        });
     });
-    });
-    // Output Structured Logging, setup options
-    // logging.AddZLoggerConsole(options => options.UseJsonFormatter());
 });
 var logger = factory.CreateLogger("tdl");
 
@@ -85,7 +91,7 @@ using (var client = new TdClient())
         var currentUser = await GetCurrentUser(client);
 
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+        logger.ZLogInformation($"Successfully logged in as {currentUser.Id} / @{currentUser.Usernames?.ActiveUsernames[0]} / {fullUserName}");
 
         await ConvertForwardToCopy(client);
 
