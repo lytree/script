@@ -1,3 +1,4 @@
+#!/usr/bin/env dotnet
 #:package TDLib@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
@@ -7,197 +8,188 @@
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
 #:package YLFramework.ZLogging@1.0.3-alpha.3
+
+using System;
 using System.CommandLine;
+using System.IO;
+using System.Threading;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-#region
-using var factory = LoggerFactory.Create(logging =>
-{
-    logging.SetMinimumLevel(LogLevel.Trace);
-
-    // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerSpectreConsole();
-
-    logging.AddZLoggerFile("tdl.log", (options) =>
-    {
-        options.UsePlainTextFormatter((formatter) =>
-        {
-            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
-               (in template, in i) =>
-               {
-                   template.Format(
-                               i.Timestamp,
-                               i.LogLevel,
-                               i.Category);
-               });
-            formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-        });
-    });
-});
-var logger = factory.CreateLogger("tdl");
-#endregion
-
-
-
-
-
-
-var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Environment.CurrentDirectory, "data") };
-var optionsUrls = new Option<string[]>("--urls") { Required = true };
-var rootCommand = new RootCommand { optionOutput, optionsUrls };
-
-var parseResult = rootCommand.Parse(args);
-#region 全局环境变量
-// 获取用户主目录，例如 C:\Users\Administrator
-string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-// 拼接 .tdl 目录
-string tdlRoot = Path.Combine(userProfile, ".tdl");
-
-// 如果需要区分账号（可选），可以再加一层子目录
-string databasePath = Path.Combine(tdlRoot, "db");
-
-
-// 确保目录存在
-if (!Directory.Exists(tdlRoot))
-{
-    Directory.CreateDirectory(tdlRoot);
-    logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
-}
-
-#endregion
-
-
-
+// 全局变量
 ManualResetEventSlim ReadyToAuthenticate = new();
 bool _authNeeded = false;
 bool _passwordNeeded = false;
+string tdlRoot = string.Empty;
+DownloadProgressBarManager _progressBarManager;
 
-
-
-/// <summary>
-/// 将转发消息转换为深度copy
-/// </summary>
-/// <value></value>
-
-
-using (var client = new TdClient())
+// 主函数
+async Task Main(TdClient client, string[] args)
 {
-    client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
+    // 初始化进度条管理器
+    _progressBarManager = new DownloadProgressBarManager();
+    
+    // 初始化日志
+    var logger = InitializeLogger();
 
+    // 解析命令行参数
+    var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Environment.CurrentDirectory, "data") };
+    var optionsUrls = new Option<string[]>("--urls")
+    {
+        Required = true,
+        DefaultValueFactory = (res) => ["https://t.me/atsJoe/19342"]
+    };
+    var rootCommand = new RootCommand { optionOutput, optionsUrls };
+    var parseResult = rootCommand.Parse(args);
+    var outputPath = parseResult.GetValue(optionOutput);
 
+    // 初始化全局环境变量
+    InitializeEnvironment(logger);
 
+    // 下载文件
+    await DownloadFiles(client, parseResult, optionsUrls, outputPath, logger);
+
+    logger.WriteMarkup("Press ENTER to exit from application");
+    Console.ReadLine();
+}
+
+// 初始化日志
+ILogger InitializeLogger()
+{
+    var factory = LoggerFactory.Create(logging =>
+    {
+        logging.SetMinimumLevel(LogLevel.Trace);
+        logging.AddZLoggerSpectreConsole();
+        logging.AddZLoggerFile("tdl.log", (options) =>
+        {
+            options.UsePlainTextFormatter((formatter) =>
+            {
+                formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
+                   (in template, in i) =>
+                   {
+                       template.Format(
+                                   i.Timestamp,
+                                   i.LogLevel,
+                                   i.Category);
+                   });
+                formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
+            });
+        });
+    });
+    return factory.CreateLogger("tdl");
+}
+
+// 初始化环境
+void InitializeEnvironment(ILogger logger)
+{
+    // 获取用户主目录，例如 C:\Users\Administrator
+    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    // 拼接 .tdl 目录
+    tdlRoot = Path.Combine(userProfile, ".tdl");
+
+    // 确保目录存在
+    if (!Directory.Exists(tdlRoot))
+    {
+        Directory.CreateDirectory(tdlRoot);
+        logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
+    }
+}
+
+// 下载文件
+async Task DownloadFiles(TdClient client, ParseResult parseResult, Option<string[]> optionsUrls, string outputPath, ILogger logger)
+{
     try
     {
         // Subscribing to all events
-        client.UpdateReceived += async (_, update) => { await ProcessUpdates(client, update); };
+        client.UpdateReceived += async (_, update) => { await ProcessUpdates(client, update, outputPath, logger); };
 
         // Waiting until we get enough events to be in 'authentication ready' state
         ReadyToAuthenticate.Wait();
+
         // We may not need to authenticate since TdLib persists session in 'td.binlog' file.
-        // See 'TdlibParameters' class for more information, or:
-        // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1tdlib_parameters.html
         if (_authNeeded)
         {
             // Interactively handling authentication
-            await HandleAuthentication(client);
+            await HandleAuthentication(client, logger);
         }
 
-        // Querying info about current user and some channels
+        // Querying info about current user
         var currentUser = await GetCurrentUser(client);
-
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
         logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+
+        // 处理每个 URL
         foreach (var url in parseResult.GetValue(optionsUrls))
         {
-            var fileId = await GetFileIdFromLinkAsync(client, url);
-
-            await client.DownloadFileAsync(fileId, 12, 0, 0, false);
+            var fileId = await GetFileIdFromLinkAsync(client, url, logger);
+            if (fileId > 0)
+            {
+                await client.DownloadFileAsync(fileId, 12, 0, 0, false);
+            }
         }
-
-
-        logger.WriteMarkup("Press ENTER to exit from application");
-        Console.ReadLine();
     }
     catch (Exception e)
     {
-        Console.WriteLine(e);
+        logger.LogError(e, "An error occurred during download");
     }
 }
 
-
-
-async Task HandleAuthentication(TdClient client)
+// 处理认证
+async Task HandleAuthentication(TdClient client, ILogger logger)
 {
-    // Setting phone number
-    await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
+    try
     {
-        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
-    });
+        // Setting phone number
+        await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
+        {
+            PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
+        });
 
-    // Telegram servers will send code to us
-    Console.Write("Insert the login code: ");
-    var code = Console.ReadLine();
+        // Telegram servers will send code to us
+        Console.Write("Insert the login code: ");
+        var code = Console.ReadLine();
 
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationCode
+        await client.ExecuteAsync(new TdApi.CheckAuthenticationCode
+        {
+            Code = code
+        });
+
+        if (!_passwordNeeded) { return; }
+
+        // 2FA may be enabled. Cloud password is required in that case.
+        Console.Write("Insert the password: ");
+        var password = Console.ReadLine();
+
+        await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword
+        {
+            Password = password
+        });
+    }
+    catch (Exception ex)
     {
-        Code = code
-    });
-
-    if (!_passwordNeeded) { return; }
-
-
-    // 2FA may be enabled. Cloud password is required in that case.
-    Console.Write("Insert the password: ");
-    var password = Console.ReadLine();
-
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword
-    {
-        Password = password
-    });
+        logger.LogError(ex, "Authentication failed");
+        throw;
+    }
 }
+
+// 获取当前用户信息
 async Task<TdApi.User> GetCurrentUser(TdClient client)
 {
     return await client.ExecuteAsync(new TdApi.GetMe());
 }
-async Task ProcessUpdates(TdClient client, TdApi.Update update)
-{
-    // Since Tdlib was made to be used in GUI application we need to struggle a bit and catch required events to determine our state.
-    // Below you can find example of simple authentication handling.
-    // Please note that AuthorizationStateWaitOtherDeviceConfirmation is not implemented.
 
+// 处理更新
+async Task ProcessUpdates(TdClient client, TdApi.Update update, string outputPath, ILogger logger)
+{
     switch (update)
     {
         case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitTdlibParameters }:
-            // TdLib creates database in the current directory.
-            // so create separate directory and switch to that dir.
-            await client.ExecuteAsync(new TdApi.SetTdlibParameters
-            {
-                ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
-                ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
-                DeviceModel = "PC",
-                SystemLanguageCode = "en",
-                ApplicationVersion = "1.0.0",
-                // 数据库放在用户目录下的 .tdl/db
-                DatabaseDirectory = Path.Combine(tdlRoot, "db"),
-
-                // 下载的文件放在用户目录下的 .tdl/files
-                FilesDirectory = Path.Combine(parseResult.GetValue(optionOutput), "files"),
-                UseFileDatabase = true,
-                UseChatInfoDatabase = true,
-                UseMessageDatabase = true,
-            });
-            logger.ZLogInformation($"正在尝试连接代理...");
-            // 参数说明：服务器地址, 端口, 是否启用
-            var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
-
-            // 启用该代理
-            await client.EnableProxyAsync(proxy.Id);
-            logger.ZLogInformation($"代理已启用。");
+            await ConfigureTdlibParameters(client, outputPath, logger);
             break;
 
         case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPhoneNumber }:
@@ -219,36 +211,82 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
         case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
             // You may trigger additional event on connection state change
             break;
+
         // 核心：处理文件状态更新
         case TdApi.Update.UpdateFile updateFile:
-            var file = updateFile.File;
-
-            if (file.Local.IsDownloadingActive)
-            {
-                // 记录下载进度
-                double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
-                logger.ZLogInformation($"文件 {file.Id} 进度: {percent:F1}%");
-            }
-            else if (file.Local.IsDownloadingCompleted)
-            {
-                // 下载完成，Path 就是磁盘上的绝对路径
-                logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
-
-                // 这里可以触发你自己的业务逻辑，比如“文件下载后的自动处理”
-                // OnDownloadFinished(file);
-            }
+            await HandleFileUpdate(updateFile.File, logger);
             break;
+
         default:
-            // ReSharper disable once EmptyStatement
-            ;
             // Add a breakpoint here to see other events
             break;
     }
 }
 
+// 配置 TDLib 参数
+async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger logger)
+{
+    // TdLib creates database in the current directory.
+    // so create separate directory and switch to that dir.
+    await client.ExecuteAsync(new TdApi.SetTdlibParameters
+    {
+        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
+        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
+        DeviceModel = "PC",
+        SystemLanguageCode = "en",
+        ApplicationVersion = "1.0.0",
+        // 数据库放在用户目录下的 .tdl/db
+        DatabaseDirectory = Path.Combine(tdlRoot, "db"),
+        // 下载的文件放在用户目录下的 .tdl/files
+        FilesDirectory = Path.Combine(outputPath, "files"),
+        UseFileDatabase = true,
+        UseChatInfoDatabase = true,
+        UseMessageDatabase = true,
+    });
+
+    logger.ZLogInformation($"正在尝试连接代理...");
+    // 参数说明：服务器地址, 端口, 是否启用
+    var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
+    // 启用该代理
+    await client.EnableProxyAsync(proxy.Id);
+    logger.ZLogInformation($"代理已启用。");
+}
 
 
-void OnDownloadFinished(TdApi.File file)
+
+// 处理文件更新
+async Task HandleFileUpdate(TdApi.File file, ILogger logger)
+{
+    // 将文件 ID 转换为字符串作为键
+    string fileKey = file.Id.ToString();
+    
+    if (file.Local.IsDownloadingActive)
+    {
+        // 更新下载进度
+        _progressBarManager.UpdateProgress(fileKey, file.Local.DownloadedSize);
+        
+        // 如果是第一次更新，启动进度条
+        if (file.Local.DownloadedSize == 0)
+        {
+            AnsiConsole.WriteLine($"开始下载文件: {file.Id}");
+            _progressBarManager.StartProgressBar(fileKey, file.ExpectedSize);
+        }
+    }
+    else if (file.Local.IsDownloadingCompleted)
+    {
+        // 下载完成，Path 就是磁盘上的绝对路径
+        logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
+
+        // 清理进度条
+        _progressBarManager.CompleteDownload(fileKey);
+
+        // 触发文件下载完成后的处理
+        OnDownloadFinished(file, logger);
+    }
+}
+
+// 处理下载完成的文件
+void OnDownloadFinished(TdApi.File file, ILogger logger)
 {
     string sourcePath = file.Local.Path;
     string fileName = Path.GetFileName(sourcePath);
@@ -258,10 +296,8 @@ void OnDownloadFinished(TdApi.File file)
     {
         // 确保目标目录存在
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-
         // 移动或复制文件到你的业务文件夹
         File.Copy(sourcePath, targetPath, true);
-
         logger.ZLogInformation($"【业务处理】文件已归档至: {targetPath}");
     }
     catch (Exception ex)
@@ -269,12 +305,15 @@ void OnDownloadFinished(TdApi.File file)
         logger.ZLogError(ex, $"处理下载完成的文件时出错");
     }
 }
+
+
+
 /// <summary>
 /// 解析 Telegram 链接并提取其中的核心 FileId
 /// </summary>
 /// <param name="link">例如 https://t.me/R_E_STUDIO/21221</param>
 /// <returns>返回 FileId，如果未找到则返回 0</returns>
-async Task<int> GetFileIdFromLinkAsync(TdClient client, string link)
+async Task<int> GetFileIdFromLinkAsync(TdClient client, string link, ILogger logger)
 {
     try
     {
@@ -313,5 +352,154 @@ async Task<int> GetFileIdFromLinkAsync(TdClient client, string link)
     {
         logger.ZLogError(ex, $"解析链接时发生 TDLib 错误: {link}");
         return 0;
+    }
+}
+
+// 主程序入口
+using (var client = new TdClient())
+{
+    client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
+    await Main(client, args);
+}
+
+// 下载进度条管理器类
+public class DownloadProgressBarManager
+{
+    // 存储进度条任务
+    private Dictionary<string, ProgressTask> _progressBars = new Dictionary<string, ProgressTask>();
+    
+    // 存储文件下载信息
+    private Dictionary<string, long> _fileDownloadedSize = new Dictionary<string, long>();
+    private Dictionary<string, long> _fileExpectedSize = new Dictionary<string, long>();
+    
+    // 线程安全锁
+    private object _progressLock = new object();
+    
+    /// <summary>
+    /// 启动进度条显示
+    /// </summary>
+    /// <param name="key">文件标识（字符串形式）</param>
+    /// <param name="fileSize">文件大小（字节）</param>
+    /// <param name="description">进度条描述</param>
+    public void StartProgressBar(string key, long fileSize, string description = null)
+    {
+        // 存储文件大小信息
+        lock (_progressLock)
+        {
+            _fileExpectedSize[key] = fileSize;
+        }
+        
+        Task.Run(() =>
+        {
+            // 配置并启动进度条
+            ConfigureAndStartProgressBar(key, fileSize, description ?? $"下载文件 {key}");
+        });
+    }
+    
+    /// <summary>
+    /// 更新下载进度
+    /// </summary>
+    /// <param name="key">文件标识（字符串形式）</param>
+    /// <param name="downloadedSize">已下载大小（字节）</param>
+    public void UpdateProgress(string key, long downloadedSize)
+    {
+        lock (_progressLock)
+        {
+            _fileDownloadedSize[key] = downloadedSize;
+        }
+    }
+    
+    /// <summary>
+    /// 完成下载
+    /// </summary>
+    /// <param name="key">文件标识（字符串形式）</param>
+    public void CompleteDownload(string key)
+    {
+        lock (_progressLock)
+        {
+            if (_fileDownloadedSize.ContainsKey(key))
+            {
+                _fileDownloadedSize.Remove(key);
+            }
+            if (_fileExpectedSize.ContainsKey(key))
+            {
+                _fileExpectedSize.Remove(key);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 配置并启动进度条
+    /// </summary>
+    private void ConfigureAndStartProgressBar(string key, long fileSize, string description)
+    {
+        AnsiConsole.Progress()
+            .AutoRefresh(true)
+            .AutoClear(false)
+            .HideCompleted(true)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new DownloadedColumn(),
+                new TransferSpeedColumn(),
+                new RemainingTimeColumn()
+            )
+            .Start(ctx =>
+            {
+                var progressTask = ctx.AddTask(description, maxValue: fileSize);
+                
+                lock (_progressLock)
+                {
+                    _progressBars[key] = progressTask;
+                }
+                
+                // 持续更新进度直到下载完成
+                UpdateProgressBarUntilComplete(key, progressTask);
+                
+                // 完成后清理
+                CleanupProgressBar(key);
+            });
+    }
+    
+    /// <summary>
+    /// 持续更新进度条直到下载完成
+    /// </summary>
+    private void UpdateProgressBarUntilComplete(string key, ProgressTask progressTask)
+    {
+        while (true)
+        {
+            long downloadedSize;
+            bool fileExists;
+            
+            lock (_progressLock)
+            {
+                fileExists = _fileDownloadedSize.ContainsKey(key);
+                downloadedSize = fileExists ? _fileDownloadedSize[key] : 0;
+            }
+            
+            if (!fileExists)
+            {
+                break;
+            }
+            
+            // 更新进度条值（使用已下载大小）
+            progressTask.Value = downloadedSize;
+            
+            Thread.Sleep(100); // 避免过于频繁的更新
+        }
+    }
+    
+    /// <summary>
+    /// 清理进度条资源
+    /// </summary>
+    private void CleanupProgressBar(string key)
+    {
+        lock (_progressLock)
+        {
+            if (_progressBars.ContainsKey(key))
+            {
+                _progressBars.Remove(key);
+            }
+        }
     }
 }
