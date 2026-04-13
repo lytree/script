@@ -1,11 +1,15 @@
+#:include "*.cs"
+
+
+
 #:package Refit@9.0.2
+#:property EnableDefaultEmbeddedResourceItems=true
 #:property JsonSerializerIsReflectionEnabledByDefault=true
-#:property PublishTrimmed=false
-#:property Imports=../Helper/Json.cs
-using System.Runtime.CompilerServices;
-using System.Text.Json;
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+
+
+// #:property Imports=../Helper/Json.cs
 using Refit;
-using Helper;
 
 
 IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpClient()
