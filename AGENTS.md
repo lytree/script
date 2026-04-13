@@ -20,8 +20,18 @@ Code Structure:
 Use Top-level statements. Do not wrap the main logic in a class Program { static void Main... }.
 You can define classes, records, and methods at the bottom of the file or interspersed (local functions).
 Arguments:
-Command-line arguments are accessible via the global args variable (string array).
-Example Template (Strictly follow this pattern):
+Command-line parameters can be parsed and accessed as global variables through #:package System.CommandLine@*.
+
+Creating New C# Files:
+When creating new C# files in this project, always follow the file-based model with the following structure:
+1. Start with the Unix shebang line: #!/usr/bin/env dotnet
+2. Add any required package references using #:package directives
+3. Include #:package System.CommandLine@* for command-line parameter parsing
+4. Add using statements for required namespaces
+5. Use top-level statements for the main logic
+6. Define classes, records, and methods as needed
+
+Example Web Template (Strictly follow this pattern):
 
 #!/usr/bin/env dotnet
 #:sdk Microsoft.NET.Sdk.Web
@@ -34,4 +44,29 @@ var app = builder.Build();
 app.MapGet("/", (string? query) => $"hello,{query ?? ""}");
 
 app.Run();
-Task: [在此处描述你想要生成的脚本功能，例如：写一个脚本，读取当前目录下的所有图片并调整大小...]
+
+
+Example Cli Template (Strictly follow this pattern):
+
+#!/usr/bin/env dotnet
+#:sdk Microsoft.NET.Sdk.Web
+#:property PublishAot=false
+#:package Spectre.Console@*
+#:package System.CommandLine@*
+using System.CommandLine;
+using System.Text;
+using Spectre.Console;
+
+var rootCommand = new RootCommand("Description");
+
+var optionVerbose = new Option<bool>("--verbose", "Enable verbose output");
+var optionOutput = new Option<string?>("--output", "Output to file");
+rootCommand.Options.Add(optionVerbose);
+rootCommand.Options.Add(optionOutput);
+
+rootCommand.SetAction((res) =>
+{
+
+});
+
+rootCommand.Parse(args);
