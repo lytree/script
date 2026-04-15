@@ -1,4 +1,4 @@
-#:include "*.cs"
+#:include ../Helper/*.cs
 
 
 
@@ -6,6 +6,7 @@
 #:property EnableDefaultEmbeddedResourceItems=true
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 
 
 // #:property Imports=../Helper/Json.cs
