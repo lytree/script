@@ -7,12 +7,12 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Spectre.Console;
 
-var m3u8Url = args.Length > 0 ? args[0] : "https://hls.uhoaza.cn/videos5/9f1da7f1ddb1abaf06fad0b531780526/9f1da7f1ddb1abaf06fad0b531780526.m3u8?auth_key=***&v=3&time=0";
-var output = args.Length > 1 ? args[1] : "output.mp4";
+var m3u8Url =  "https://hls.isihiq.cn/videos5/4f6b836bfbfbb5e6779e14c79ea5d2d8/4f6b836bfbfbb5e6779e14c79ea5d2d8.m3u8?auth_key=***&v=3&time=0";
+var output =  "output.mp4";
 var concurrency = 8;
 var headers = new Dictionary<string, string>
 {
-    { "Referer", "https://example.com" },
+    // { "Referer", "https://example.com" },
 };
 var ffmpegPath = "ffmpeg";
 var quality = args.Length > 2 ? args[2] : "best";
