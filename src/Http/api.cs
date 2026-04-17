@@ -1,4 +1,5 @@
-#:include "*.cs"
+#!/usr/bin/env dotnet
+#:include ../Helper/*.cs
 
 
 
@@ -6,9 +7,12 @@
 #:property EnableDefaultEmbeddedResourceItems=true
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 
 
 // #:property Imports=../Helper/Json.cs
+using System.Text.Json;
+using Helper;
 using Refit;
 
 
