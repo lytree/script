@@ -281,7 +281,7 @@ async Task HandleFileUpdate(TdApi.File file, ILogger logger)
         _progressBarManager.CompleteDownload(fileKey);
 
         // 触发文件下载完成后的处理
-        OnDownloadFinished(file, logger);
+        // OnDownloadFinished(file, logger);
     }
 }
 

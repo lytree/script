@@ -163,12 +163,8 @@ async Task ProcessUpdates(TdClient client, TdApi.Update update)
                 UseMessageDatabase = true,
             });
             logger.ZLogInformation($"正在尝试连接代理...");
-            var proxyType = new TdApi.ProxyType.ProxyTypeSocks5
-            {
-            };
             // 参数说明：服务器地址, 端口, 是否启用
-            var proxy = await client.AddProxyAsync("127.0.0.1", 7897, true, proxyType);
-
+            var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
             // 启用该代理
             await client.EnableProxyAsync(proxy.Id);
             logger.ZLogInformation($"代理已启用。");
