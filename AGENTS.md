@@ -36,7 +36,10 @@ Example Web Template (Strictly follow this pattern):
 #!/usr/bin/env dotnet
 #:sdk Microsoft.NET.Sdk.Web
 #:property PublishAot=false
-
+#:property EnableDefaultEmbeddedResourceItems=true
+#:property JsonSerializerIsReflectionEnabledByDefault=true
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:8500");
 
@@ -50,6 +53,10 @@ Example Cli Template (Strictly follow this pattern):
 
 #!/usr/bin/env dotnet
 #:sdk Microsoft.NET.Sdk.Web
+#:property EnableDefaultEmbeddedResourceItems=true
+#:property JsonSerializerIsReflectionEnabledByDefault=true
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 #:property PublishAot=false
 #:package Spectre.Console@*
 #:package System.CommandLine@*

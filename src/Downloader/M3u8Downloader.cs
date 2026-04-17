@@ -1,6 +1,6 @@
 
-#:package Spectre.Console@0.55.0
-#:package System.CommandLine@2.0.5
+#:package Spectre.Console@*
+#:package System.CommandLine@*
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,7 +12,7 @@ var output = args.Length > 1 ? args[1] : "output.mp4";
 var concurrency = 8;
 var headers = new Dictionary<string, string>
 {
-    { "Referer", "https://example.com" },
+
 };
 var ffmpegPath = "ffmpeg";
 var quality = args.Length > 2 ? args[2] : "best";
