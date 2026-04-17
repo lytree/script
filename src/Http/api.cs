@@ -8,6 +8,7 @@
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property ExperimentalFileBasedProgramEnableIncludeDirective=true
 #:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 
 
 // #:property Imports=../Helper/Json.cs
