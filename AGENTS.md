@@ -14,6 +14,8 @@ Default: If omitted, it behaves like a Console app.
 Example: #:property TargetFramework=net10.0
 Example: #:property LangVersion=preview
 #:project <Path>: References another project file.
+#:include <Path>: References another cs file.
+
 Unix Shebang:
 Always include #!/usr/bin/env dotnet as the very first line to make it executable on Unix-like systems.
 Code Structure:
@@ -21,6 +23,8 @@ Use Top-level statements. Do not wrap the main logic in a class Program { static
 You can define classes, records, and methods at the bottom of the file or interspersed (local functions).
 Arguments:
 Command-line parameters can be parsed and accessed as global variables through #:package System.CommandLine@*.
+
+System.CommandLine Version > 2
 
 Creating New C# Files:
 When creating new C# files in this project, always follow the file-based model with the following structure:
@@ -30,6 +34,12 @@ When creating new C# files in this project, always follow the file-based model w
 4. Add using statements for required namespaces
 5. Use top-level statements for the main logic
 6. Define classes, records, and methods as needed
+
+
+Run C# Files:
+dotnet run XXXXX.cs -- args
+
+
 
 Example Web Template (Strictly follow this pattern):
 
