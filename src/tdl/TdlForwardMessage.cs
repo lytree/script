@@ -5,7 +5,7 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.3
+#:package YLFramework.ZLogging@1.0.3-alpha.4
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using TdLib;
