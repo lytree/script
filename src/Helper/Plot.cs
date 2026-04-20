@@ -1,4 +1,4 @@
-#:package ScottPlot@5.1.57
+#:package ScottPlot@*
 
 using System;
 using System.Collections.Generic;
