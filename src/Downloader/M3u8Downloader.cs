@@ -20,7 +20,7 @@ var optionUrl = new Option<string>("--url")
 
 var optionOutput = new Option<string>("--output")
 {
-    Description = "Output file path (default: output.mp4)"
+    Description = "Output file path (default: filename from URL or output.mp4)"
 };
 
 var optionConcurrency = new Option<int>("--concurrency")
@@ -73,7 +73,7 @@ var speedContainer = new SpeedContainer();
 rootCommand.SetAction((ParseResult parseResult) =>
 {
     var url = parseResult.GetValue(optionUrl);
-    var output = parseResult.GetValue(optionOutput) ?? "output.mp4";
+    var output = parseResult.GetValue(optionOutput) ?? ExtractFileNameFromUrl(url);
     var concurrency = parseResult.GetValue(optionConcurrency);
     var quality = parseResult.GetValue(optionQuality) ?? "best";
     var headerPairs = parseResult.GetValue(optionHeaders);
@@ -222,6 +222,34 @@ HttpClient CreateHttpClient(Dictionary<string, string> headers)
     return client;
 }
 
+string ExtractFileNameFromUrl(string url)
+{
+    try
+    {
+        var uri = new Uri(url);
+        var path = uri.AbsolutePath;
+        var lastSlash = path.LastIndexOf('/');
+        if (lastSlash >= 0)
+        {
+            var fileName = path[(lastSlash + 1)..];
+            if (!string.IsNullOrEmpty(fileName) && (fileName.Contains('.') || fileName.Contains('?')))
+            {
+                var queryIndex = fileName.IndexOf('?');
+                if (queryIndex >= 0)
+                {
+                    fileName = fileName[..queryIndex];
+                }
+                if (!string.IsNullOrEmpty(fileName) && Path.HasExtension(fileName))
+                {
+                    return fileName;
+                }
+            }
+        }
+    }
+    catch { }
+    return "output.mp4";
+}
+
 async Task<string> FetchM3u8Async(HttpClient client, string url)
 {
     var response = await client.GetAsync(url);
@@ -289,7 +317,7 @@ List<StreamInfo> ParseMasterM3u8(string content, string m3u8Url)
         }
     }
 
-    return streams.OrderByDescending(s => s.Bandwidth).ToList();
+    return [.. streams.OrderByDescending(s => s.Bandwidth)];
 }
 
 string SelectStreamUrl(List<StreamInfo> streams, string quality, string originalUrl)

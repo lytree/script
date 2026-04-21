@@ -1,6 +1,6 @@
 #:package Microsoft.Playwright@*
-#:package HtmlAgilityPack@1.12.4
-#:package Dumpify@0.7.0
+#:package HtmlAgilityPack@*
+#:package Dumpify@*
 
 
 
