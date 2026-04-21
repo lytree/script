@@ -25,7 +25,8 @@ var optionOutput = new Option<string>("--output")
 
 var optionConcurrency = new Option<int>("--concurrency")
 {
-    Description = "Number of concurrent downloads (default: 8)"
+    Description = "Number of concurrent downloads (default: 8)",
+    DefaultValueFactory = (res) => 8
 };
 
 var optionQuality = new Option<string>("--quality")
@@ -45,7 +46,8 @@ var optionFfmpegPath = new Option<string>("--ffmpeg-path")
 
 var optionRetryCount = new Option<int>("--retry")
 {
-    Description = "Number of retry attempts for failed segments (default: 3)"
+    Description = "Number of retry attempts for failed segments (default: 3)",
+    DefaultValueFactory = (res) => 3
 };
 
 var optionSpeedLimit = new Option<long>("--speed-limit")
@@ -117,11 +119,13 @@ rootCommand.SetAction((ParseResult parseResult) =>
 
         using var client = CreateHttpClient(headers);
 
-        AnsiConsole.Markup($"[yellow]Fetching master playlist...[/]");
+        AnsiConsole.Markup($"[yellow]Fetching m3u8...[/]");
         var masterContent = FetchM3u8Async(client, url).GetAwaiter().GetResult();
         var streams = ParseMasterM3u8(masterContent, url);
 
         string targetUrl;
+        M3u8Info? m3u8Info = null;
+
         if (streams.Count > 0)
         {
             var videoStreams = streams.Where(s => IsVideoStream(s.Codecs)).ToList();
@@ -135,16 +139,16 @@ rootCommand.SetAction((ParseResult parseResult) =>
                 AnsiConsole.Markup($"  - {qualityLabel} ({FormatBandwidth(s.Bandwidth)}){videoTag}");
             }
             targetUrl = SelectStreamUrl(streams, quality, url);
+            AnsiConsole.Markup($"[cyan]Using: {targetUrl}[/]\n");
+
+            var m3u8Content = FetchM3u8Async(client, targetUrl).GetAwaiter().GetResult();
+            m3u8Info = ParseM3u8(m3u8Content, targetUrl);
         }
         else
         {
             targetUrl = url;
+            m3u8Info = ParseM3u8(masterContent, url);
         }
-
-        AnsiConsole.Markup($"[cyan]Using: {targetUrl}[/]\n");
-
-        var m3u8Content = FetchM3u8Async(client, targetUrl).GetAwaiter().GetResult();
-        var m3u8Info = ParseM3u8(m3u8Content, targetUrl);
 
         AnsiConsole.Markup($"[green]Found {m3u8Info.Segments.Count} segments[/]");
 
@@ -684,7 +688,7 @@ async Task MergeWithFFmpegAsync(string tempDir, string outputPath, string ffmpeg
 
     var result = await Cli.Wrap(ffmpegPath)
         .WithArguments($"-y -f concat -safe 0 -i \"{listPath}\" -c copy \"{outputPath}\"")
-        .WithStandardErrorPipe(PipeTarget.ToDelegate(line => AnsiConsole.Markup($"[grey]{line}[/]")))
+        .WithStandardErrorPipe(PipeTarget.ToDelegate(line => Console.WriteLine(line)))
         .ExecuteAsync();
 
     if (result.ExitCode != 0)
