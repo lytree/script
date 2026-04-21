@@ -1,3 +1,7 @@
+
+
+#:include ../Helper/*.cs
+#:include ../Data/*.cs
 #:package MySqlConnector@2.5.0
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property PublishTrimmed=false
@@ -7,23 +11,15 @@
 #:package SixLabors.ImageSharp.Drawing@2.1.7
 #:package ScottPlot@5.1.57
 #:package DotNetty.Buffers@0.7.6
-#:property Imports=../Helper/Json.cs;../Helper/DateTime.cs;../Helper/Images.cs;../Helper/Plot.cs;../Data/Config.cs;../Data/Data.cs;../Data/WaveObject.cs
 
 
 
 
-using System.IO;
-using System.Diagnostics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 using System.Text.RegularExpressions;
-using FreeSql;
-using MySqlConnector;
-using Helper;
 using Data;
+using FreeSql;
+using Helper;
 using SkiaSharp;
 
 IFreeSql config = new FreeSql.FreeSqlBuilder()
@@ -77,7 +73,7 @@ void createImage(Data.Machine machine, Data.MachinePosition position, DateTime s
         wave_y[i] = wave.Wave[i];
     }
 
-    List<Data.Tendency>? list = Data.Vib.GetVibTendency(data, machine.MachineId, startTime, endTime, position.PositionId).AsEnumerable().ToList<Tendency>();
+    List<Data.Tendency>? list = [.. Data.Vib.GetVibTendency(data, machine.MachineId, startTime, endTime, position.PositionId).AsEnumerable()];
     var x = new List<double>();
     var y = new List<double>();
     foreach (var tendency in list)
