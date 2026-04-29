@@ -1,27 +1,30 @@
-#:package Avalonia@11.3.10
-#:package Avalonia.Desktop@11.3.10
-#:package Avalonia.Themes.Fluent@11.3.10
-#:package Avalonia.Markup.Declarative@11.3.7-beta05
-#:package ScottPlot@5.1.57
-#:package ScottPlot.Avalonia@5.1.57
-#:package Avalonia.Skia@11.3.10
-#:package SkiaSharp@3.119.1
-#:package SkiaSharp.NativeAssets.Linux@3.119.1
-#:package SkiaSharp.NativeAssets.Linux.NoDependencies@3.119.1
+
+#:include ../../lib/Plot/*.cs
+
+#:package Avalonia@12.*
+#:package Avalonia.Desktop@12.*
+#:package Avalonia.Fonts.Inter@12.*
+#:package Avalonia.Themes.Fluent@12.*
+#:package Avalonia.Markup.Declarative@12.*
+#:package CommunityToolkit.Mvvm@8.*
+#:package ScottPlot@5.*
+#:package SkiaSharp@3.*
+
+#if OS_LINUX
+#:package SkiaSharp.NativeAssets.Linux.NoDependencies@3.*
+#endif
+
 using Avalonia;
-using Avalonia.Interactivity;
 using Avalonia.Controls;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Data;
-using Avalonia.Themes.Fluent;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Themes.Fluent;
 using Avalonia.Markup.Declarative;
-using ScottPlot.Avalonia;
-using ScottPlot;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Data;
+using CommunityToolkit.Mvvm.ComponentModel;
 using SkiaSharp;
-using Avalonia.Input;
-using ScottPlot.Plottables;
+using ScottPlot;
 
 
 
@@ -73,13 +76,13 @@ AppBuilder.Configure<Application>()
 
 #region 画图工具
 // --- 定义一个生成“带工具栏图表”的辅助函数 ---
-Grid CreateChartWithToolbars(out AvaPlot plot, List<(double[], double[])> datas, string title, Action<IPlotMenu?>? func = default)
+Grid CreateChartWithToolbars(out AvaloniaPlot plot, List<(double[], double[])> datas, string title, Action<IPlotMenu?>? func = default)
 {
 
 
 
     var currentIndex = 0;
-    var newPlot = new AvaPlot()
+    var newPlot = new AvaloniaPlot()
         .HorizontalAlignment(Avalonia.Layout.HorizontalAlignment.Stretch)
         .VerticalAlignment(Avalonia.Layout.VerticalAlignment.Stretch);
 
@@ -190,7 +193,7 @@ Grid CreateChartWithToolbars(out AvaPlot plot, List<(double[], double[])> datas,
 
 // avaPlot.Plot.Axes.Bottom.TickLabelStyle.FontName = simhei.FamilyName;
 
-ScottPlot.Avalonia.AvaPlot plot1, plot2;
+AvaloniaPlot plot1, plot2;
 
 // 2. 构建主窗口内容
 lifetime.MainWindow = new Window()
@@ -203,7 +206,7 @@ lifetime.MainWindow = new Window()
                 CreateChartWithToolbars(out plot1, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))], "波形图").Row(0),
 
                 // 右侧图表组合
-                CreateChartWithToolbars(out plot2, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))] ,"频谱图·").Row(1),
+                CreateChartWithToolbars(out plot2, [(Generate.Consecutive(1000), Generate.RandomWalk(1000))], "频谱图·").Row(1),
 
                 // --- 底部状态栏 (横跨两列) ---
                 new StackPanel()
