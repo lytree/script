@@ -1,28 +1,28 @@
-#:package Avalonia@11.3.10
-#:package Avalonia.Desktop@11.3.10
-#:package Avalonia.Fonts.Inter@11.3.10
-#:package Avalonia.Diagnostics@11.3.10
-#:package Avalonia.Themes.Fluent@11.3.10
-#:package Avalonia.Markup.Declarative@11.3.7-beta05
-#:package ScottPlot@5.1.57
-#:package ScottPlot.Avalonia@5.1.57
+
+#:include ../../lib/Plot/*.cs
+
+#:package Avalonia@12.*
+#:package Avalonia.Desktop@12.*
+#:package Avalonia.Fonts.Inter@12.*
+#:package Avalonia.Themes.Fluent@12.*
+#:package Avalonia.Markup.Declarative@12.*
+#:package CommunityToolkit.Mvvm@8.*
+#:package ScottPlot@5.*
+#:package SkiaSharp@3.*
 
 #if OS_LINUX
-#:package SkiaSharp@3.119.1
-#:package SkiaSharp.NativeAssets.Linux@3.119.1
+#:package SkiaSharp.NativeAssets.Linux.NoDependencies@3.*
 #endif
-
-
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using Avalonia.Markup.Declarative;
-using ScottPlot;
-using ScottPlot.Avalonia;
 using Avalonia.Media;
-
+using Avalonia.Styling;
+using Avalonia.Data;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 var lifetime = new ClassicDesktopStyleApplicationLifetime { Args = args, ShutdownMode = ShutdownMode.OnLastWindowClose };
 
@@ -32,18 +32,14 @@ AppBuilder.Configure<Application>()
     .SetupWithLifetime(lifetime);
 
 
-AvaPlot plot1, plot2;
+AvaloniaPlot plot1, plot2;
 
 
 
-decimal? counter = 0;
+
 
 lifetime.MainWindow = new Window().Height(1024).Width(800).Title("Avalonia MVU Template")
-    .Content(new FuncComponent<decimal?>(counter,
-        _ => BuildAnalysisDashboard(out AvaPlot plot1, out AvaPlot plot2)));
-
-
-
+    .Content(BuildAnalysisDashboard(out plot1, out plot2));
 
 
 
@@ -58,7 +54,7 @@ lifetime.Start(args);
 /// <summary>
 /// 构建分析仪表盘主界面
 /// </summary>
-Grid BuildAnalysisDashboard(out AvaPlot wavePlot, out AvaPlot specPlot)
+Grid BuildAnalysisDashboard(out AvaloniaPlot wavePlot, out AvaloniaPlot specPlot)
 {
 
 
@@ -84,7 +80,7 @@ Grid BuildAnalysisDashboard(out AvaPlot wavePlot, out AvaPlot specPlot)
 
 }
 
-Border CreateChartTools(AvaPlot wavePlot, AvaPlot specPlot)
+Border CreateChartTools(AvaloniaPlot wavePlot, AvaloniaPlot specPlot)
 {
     var Border = new Border();
     return Border;
@@ -98,9 +94,9 @@ Border CreateChartTools(AvaPlot wavePlot, AvaPlot specPlot)
 /// <param name="themeColor">工具栏的主题颜色</param>
 /// <param name="customButtons">可选：针对该图表特有的按钮</param>
 /// <returns>封装好的 Grid 容器</returns>
-Grid CreateChartUnit(out AvaPlot plot, string title, ScottPlot.Color themeColor, List<Button>? customButtons = default)
+Grid CreateChartUnit(out AvaloniaPlot plot, string title, ScottPlot.Color themeColor, List<Button>? customButtons = default)
 {
-    var newPlot = new AvaPlot();
+    var newPlot = new AvaloniaPlot();
     plot = newPlot;
 
     // 1. 配置基础样式 (针对 Linux 字体加固)
@@ -172,3 +168,5 @@ Button CreateIconButton(string svg, string toolTip)
 
     return btn;
 }
+
+
