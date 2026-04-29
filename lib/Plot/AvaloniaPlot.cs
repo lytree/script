@@ -10,6 +10,8 @@ using SkiaSharp;
 using Controls = Avalonia.Controls;
 using Avalonia.Interactivity;
 using ScottPlot;
+
+
 public class AvaloniaPlot : Controls.Control, IPlotControl
 {
     public Plot Plot { get; internal set; }
