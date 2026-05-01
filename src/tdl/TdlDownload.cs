@@ -3,11 +3,11 @@
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
 #:package System.CommandLine@*
-#:package Spectre.Console@*
-#:package Spectre.Console.Ansi@*
+#:package Spectre.Console@0.55.2
+#:package Spectre.Console.Ansi@0.55.2
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.5
+#:package YLFramework.ZLogging@1.0.3-alpha.6
 
 using System;
 using System.CommandLine;
@@ -106,7 +106,7 @@ async Task DownloadFiles(TdClient client, ParseResult parseResult, Option<string
         // Querying info about current user
         var currentUser = await GetCurrentUser(client);
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+        logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
 
         // 处理每个 URL
         foreach (var url in parseResult.GetValue(optionsUrls))
