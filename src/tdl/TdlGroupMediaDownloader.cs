@@ -1,4 +1,7 @@
 #!/usr/bin/env dotnet
+
+
+
 #:package TDLib@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
@@ -7,13 +10,10 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.4
+#:package YLFramework.ZLogging@1.0.3-alpha.5
 
-using System;
+
 using System.CommandLine;
-using System.IO;
-using System.Linq;
-using System.Threading;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -28,6 +28,7 @@ bool _passwordNeeded = false;
 string tdlRoot = string.Empty;
 DownloadTracker _downloadTracker = new();
 HashSet<int> _downloadedFileIds = new HashSet<int>();
+Dictionary<int, string> _fileIdToName = new();
 
 // 主函数
 async Task Main(TdClient client, string[] args)
@@ -37,7 +38,7 @@ async Task Main(TdClient client, string[] args)
 
     // 解析命令行参数
     var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Environment.CurrentDirectory, "data") };
-    var optionLink = new Option<string>("--link") { Required = true, DefaultValueFactory = (res) => "https://t.me/xzbcbm/117" };
+    var optionLink = new Option<string>("--link") { Required = true, DefaultValueFactory = (res) => "https://t.me/xzbcbm/74" };
     var optionIncludeComments = new Option<bool>("--include-comments") { DefaultValueFactory = (res) => true };
     var rootCommand = new RootCommand { optionOutput, optionLink, optionIncludeComments };
     var parseResult = rootCommand.Parse(args);
@@ -73,22 +74,7 @@ ILogger InitializeLogger()
     var factory = LoggerFactory.Create(logging =>
     {
         logging.SetMinimumLevel(LogLevel.Trace);
-        logging.AddZLoggerSpectreConsole();
-        logging.AddZLoggerFile("tdl-group-download.log", (options) =>
-        {
-            options.UsePlainTextFormatter((formatter) =>
-            {
-                formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
-                   (in template, in i) =>
-                   {
-                       template.Format(
-                                   i.Timestamp.Local,
-                                   i.LogLevel,
-                                   i.Category);
-                   });
-                formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-            });
-        });
+        logging.AddZLoggerSpectreConsoleAndFile("tdl-group-download.log");
     });
     return factory.CreateLogger("tdl-group-download");
 }
@@ -327,23 +313,6 @@ async Task<int> DownloadMediaGroupByAlbumId(TdClient client, long chatId, long m
     return totalDownloaded;
 }
 
-// 下载媒体组
-async Task DownloadMediaGroup(TdClient client, long chatId, long mediaAlbumId, string outputPath, ILogger logger)
-{
-    try
-    {
-        logger.ZLogInformation($"发现媒体组: {mediaAlbumId}");
-
-        // 由于 TDLib API 限制，我们通过搜索包含相同 mediaAlbumId 的消息来获取媒体组
-        // 这里我们只处理当前消息，媒体组的所有文件应该已经在同一条消息中了
-        logger.ZLogInformation($"媒体组处理完成");
-    }
-    catch (TdException ex)
-    {
-        logger.ZLogWarning($"获取媒体组失败: {ex.Error.Message}");
-    }
-}
-
 // 下载消息中的媒体
 async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, string outputPath, ILogger logger)
 {
@@ -352,10 +321,12 @@ async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, str
 
     if (fileId > 0 && !_downloadedFileIds.Contains(fileId))
     {
+        string fileName = GetFileNameFromMessage(message);
+        _fileIdToName[fileId] = fileName;
         _downloadedFileIds.Add(fileId);
         await client.DownloadFileAsync(fileId, 32, 0, 0, false);
         downloadedCount++;
-        logger.ZLogInformation($"队列下载: 消息 {message.Id} 中的媒体，FileId: {fileId}");
+        logger.ZLogInformation($"队列下载: {fileName}，FileId: {fileId}");
     }
 
     return downloadedCount;
@@ -374,6 +345,22 @@ int GetFileIdFromMessage(TdApi.Message message)
         TdApi.MessageContent.MessageVideoNote vn => vn.VideoNote.Video.Id,
         TdApi.MessageContent.MessageVoiceNote vce => vce.VoiceNote.Voice.Id,
         _ => 0
+    };
+}
+
+// 从消息中提取文件名称
+string GetFileNameFromMessage(TdApi.Message message)
+{
+    return message.Content switch
+    {
+        TdApi.MessageContent.MessageDocument d => d.Document.Document_.ToString(),
+        TdApi.MessageContent.MessageVideo v => v.Video.Video_.ToString() ?? "video.mp4",
+        TdApi.MessageContent.MessagePhoto p => "photo.jpg",
+        TdApi.MessageContent.MessageAudio a => a.Audio.Audio_.ToString() ?? "audio.mp3",
+        TdApi.MessageContent.MessageAnimation ani => ani.Animation.Animation_.ToString() ?? "animation.gif",
+        TdApi.MessageContent.MessageVideoNote vn => "video_note.mp4",
+        TdApi.MessageContent.MessageVoiceNote vce => "voice_note.ogg",
+        _ => "unknown"
     };
 }
 
@@ -401,21 +388,6 @@ async Task<TdApi.Message[]> GetMessageCommentsAsync(TdClient client, long chatId
     {
         logger.ZLogWarning($"获取评论失败: {ex.Error.Message}");
         return Array.Empty<TdApi.Message>();
-    }
-}
-
-// 通过用户名获取聊天
-async Task<TdApi.Chat> GetChatFromUsernameAsync(TdClient client, string username, ILogger logger)
-{
-    try
-    {
-        var chat = await client.SearchPublicChatAsync(username);
-        return chat;
-    }
-    catch (TdException ex)
-    {
-        logger.ZLogError(ex, $"搜索聊天失败: {username}");
-        return null;
     }
 }
 
@@ -512,13 +484,14 @@ async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger 
 async Task HandleFileUpdate(TdApi.File file, ILogger logger)
 {
     int fileId = file.Id;
+    string fileName = _fileIdToName.TryGetValue(fileId, out var name) ? name : $"file_{fileId}";
 
     if (file.Local.IsDownloadingActive)
     {
         if (file.Local.DownloadedSize == 0)
         {
-            AnsiConsole.WriteLine($"开始下载文件: {fileId}");
-            _downloadTracker.StartDownload(fileId, file.ExpectedSize);
+            AnsiConsole.WriteLine($"开始下载: {fileName}");
+            _downloadTracker.StartDownload(fileId, file.ExpectedSize, fileName);
         }
         else
         {
@@ -527,8 +500,8 @@ async Task HandleFileUpdate(TdApi.File file, ILogger logger)
     }
     else if (file.Local.IsDownloadingCompleted)
     {
-        _downloadTracker.CompleteDownload(fileId);
-        logger.ZLogInformation($"文件 {fileId} 下载完成！本地路径: {file.Local.Path}");
+        _downloadTracker.CompleteDownload(fileId, fileName);
+        logger.ZLogInformation($"文件 {fileName} 下载完成！本地路径: {file.Local.Path}");
         OnDownloadFinished(file, logger);
     }
 }
@@ -564,15 +537,17 @@ using (var client = new TdClient())
 // 下载跟踪器类
 public class DownloadTracker
 {
-    private Dictionary<int, (long Total, long Downloaded)> _downloads = new();
+    private record FileDownloadInfo(long TotalSize, long DownloadedSize, string FileName, DateTime LastUpdate, long LastBytes, int LastPrintedPercent);
+
+    private Dictionary<int, FileDownloadInfo> _downloads = new();
     private object _lock = new object();
     private HashSet<int> _completedFiles = new HashSet<int>();
 
-    public void StartDownload(int fileId, long totalSize)
+    public void StartDownload(int fileId, long totalSize, string fileName)
     {
         lock (_lock)
         {
-            _downloads[fileId] = (totalSize, 0);
+            _downloads[fileId] = new FileDownloadInfo(totalSize, 0, fileName, DateTime.UtcNow, 0, 0);
         }
     }
 
@@ -580,23 +555,44 @@ public class DownloadTracker
     {
         lock (_lock)
         {
-            if (_downloads.ContainsKey(fileId))
+            if (_downloads.TryGetValue(fileId, out var info))
             {
-                var (total, _) = _downloads[fileId];
-                _downloads[fileId] = (total, downloadedSize);
+                var now = DateTime.UtcNow;
+                var timeDiff = (now - info.LastUpdate).TotalSeconds;
+                long bytesDiff = downloadedSize - info.DownloadedSize;
+                long speed = timeDiff > 0 && bytesDiff > 0 ? (long)(bytesDiff / timeDiff) : 0;
 
-                double percent = total > 0 ? (double)downloadedSize / total * 100 : 0;
-                AnsiConsole.Write($"\r文件 {fileId}: {percent:F1}%");
+                int currentPercent = info.TotalSize > 0 ? (int)((double)downloadedSize / info.TotalSize * 100) : 0;
+                bool shouldPrint = currentPercent - info.LastPrintedPercent >= 5 || timeDiff >= 3 || downloadedSize >= info.TotalSize;
+
+                if (shouldPrint)
+                {
+                    _downloads[fileId] = info with { DownloadedSize = downloadedSize, LastUpdate = now, LastBytes = bytesDiff, LastPrintedPercent = currentPercent };
+
+                    double percent = info.TotalSize > 0 ? (double)downloadedSize / info.TotalSize * 100 : 0;
+                    string downloadedStr = FormatSize(downloadedSize);
+                    string totalStr = FormatSize(info.TotalSize);
+                    string speedStr = speed > 0 ? $"{FormatSpeed(speed)}/s" : "计算中...";
+                    string progressBar = new string('=', Math.Min(20, (int)(percent / 5))) + new string(' ', Math.Max(0, 20 - (int)(percent / 5)));
+
+                    AnsiConsole.MarkupLine($"[cyan]{info.FileName}[/]");
+                    AnsiConsole.MarkupLine($"  [blue][[{percent:F1}%]][/] [{progressBar}] [white]{downloadedStr}[/] / [white]{totalStr}[/] | [yellow]{speedStr}[/]");
+                }
+                else
+                {
+                    _downloads[fileId] = info with { DownloadedSize = downloadedSize, LastUpdate = now, LastBytes = bytesDiff };
+                }
             }
         }
     }
 
-    public void CompleteDownload(int fileId)
+    public void CompleteDownload(int fileId, string fileName)
     {
         lock (_lock)
         {
             _downloads.Remove(fileId);
             _completedFiles.Add(fileId);
+            AnsiConsole.MarkupLine($"[green]✓[/] [bold]{fileName}[/] 下载完成！");
         }
     }
 
@@ -606,5 +602,24 @@ public class DownloadTracker
         {
             return _completedFiles.Count;
         }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        return $"{size:F1} {sizes[order]}";
+    }
+
+    private static string FormatSpeed(long bytesPerSecond)
+    {
+        return FormatSize(bytesPerSecond);
     }
 }
