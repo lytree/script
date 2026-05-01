@@ -93,7 +93,7 @@ using (var client = new TdClient())
         var currentUser = await GetCurrentUser(client);
 
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+        logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
         var chatId = await GetChatIdFromLinkAsync(client, "https://t.me/atsJoe/19361");
         await ForwardEverythingUntilTheEnd(client, chatId);
 

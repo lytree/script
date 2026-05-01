@@ -79,7 +79,7 @@ using (var client = new TdClient())
         var currentUser = await GetCurrentUser(client);
 
         var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"Successfully logged in as [{currentUser.Id}] / [@{currentUser.Usernames?.ActiveUsernames[0]}] / [{fullUserName}]");
+        logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
 
         await ProcessLinkQueue(client, ["https://t.me/atsJoe"]);
 
