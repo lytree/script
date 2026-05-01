@@ -7,7 +7,7 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.3
+#:package YLFramework.ZLogging@1.0.3-alpha.5
 
 using System;
 using System.CommandLine;
@@ -53,7 +53,7 @@ async Task Main(TdClient client, string[] args)
     // 下载文件
     await DownloadFiles(client, parseResult, optionsUrls, outputPath, logger);
 
-    logger.WriteMarkup("Press ENTER to exit from application");
+    logger.WriteLine("Press ENTER to exit from application");
     Console.ReadLine();
 }
 
@@ -63,22 +63,7 @@ ILogger InitializeLogger()
     var factory = LoggerFactory.Create(logging =>
     {
         logging.SetMinimumLevel(LogLevel.Trace);
-        logging.AddZLoggerSpectreConsole();
-        logging.AddZLoggerFile("tdl.log", (options) =>
-        {
-            options.UsePlainTextFormatter((formatter) =>
-            {
-                formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
-                   (in template, in i) =>
-                   {
-                       template.Format(
-                                   i.Timestamp,
-                                   i.LogLevel,
-                                   i.Category);
-                   });
-                formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-            });
-        });
+        logging.AddZLoggerSpectreConsoleAndFile("tdl.log");
     });
     return factory.CreateLogger("tdl");
 }

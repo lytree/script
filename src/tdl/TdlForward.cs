@@ -5,7 +5,7 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.4
+#:package YLFramework.ZLogging@1.0.3-alpha.5
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic;
@@ -26,20 +26,7 @@ using var factory = LoggerFactory.Create(logging =>
     // Add ZLogger provider to ILoggingBuilder
     logging.AddZLoggerSpectreConsole();
 
-    logging.AddZLoggerFile("tdl.log", (options) =>
-    {
-        options.UsePlainTextFormatter((formatter) =>
-        {
-            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
-               (in MessageTemplate template, in LogInfo i) =>
-               {
-                   template.Format(
-                               i.Timestamp,
-                               i.LogLevel,
-                               i.Category);
-               });
-        });
-    });
+    logging.AddZLoggerSpectreConsoleAndFile("tdl.log");
 });
 var logger = factory.CreateLogger("tdl");
 
