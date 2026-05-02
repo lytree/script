@@ -6,8 +6,9 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.5
+#:package YLFramework.ZLogging@1.0.3-alpha.6
 #:package Newtonsoft.Json@*
+#:include TdlUpdateHandler.cs
 
 using System;
 using System.Collections.Generic;
@@ -24,9 +25,8 @@ using ZLogger;
 
 // 全局变量
 ManualResetEventSlim ReadyToAuthenticate = new();
-bool _authNeeded = false;
-bool _passwordNeeded = false;
 string tdlRoot = string.Empty;
+TdlUpdateHandler _updateHandler;
 
 // 主程序入口
 using (var client = new TdClient())
@@ -49,14 +49,16 @@ async Task Main(TdClient client, string[] args)
 
     try
     {
-        // 订阅所有事件
-        client.UpdateReceived += async (_, update) => { await ProcessUpdates(client, update, logger); };
+        _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
+            .OnConfigureTdlibParameters(ConfigureTdlibParameters);
+
+        client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, tdlRoot); };
 
         // 等待认证就绪
         ReadyToAuthenticate.Wait();
 
         // 处理认证
-        if (_authNeeded)
+        if (_updateHandler.AuthNeeded)
         {
             await HandleAuthentication(client, logger);
         }
@@ -132,7 +134,7 @@ async Task HandleAuthentication(TdClient client, ILogger logger)
         Code = code
     });
 
-    if (!_passwordNeeded) { return; }
+    if (!_updateHandler.PasswordNeeded) { return; }
 
     // 输入 2FA 密码
     Console.Write("请输入密码: ");
@@ -144,58 +146,26 @@ async Task HandleAuthentication(TdClient client, ILogger logger)
     });
 }
 
-// 处理更新
-async Task ProcessUpdates(TdClient client, TdApi.Update update, ILogger logger)
+async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
 {
-    switch (update)
+    await client.ExecuteAsync(new TdApi.SetTdlibParameters
     {
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitTdlibParameters }:
-            // 设置 TDLib 参数
-            await client.ExecuteAsync(new TdApi.SetTdlibParameters
-            {
-                ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
-                ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
-                DeviceModel = "PC",
-                SystemLanguageCode = "zh-CN",
-                ApplicationVersion = "1.0.0",
-                DatabaseDirectory = Path.Combine(tdlRoot, "db"),
-                FilesDirectory = Path.Combine(tdlRoot, "files"),
-                UseFileDatabase = true,
-                UseChatInfoDatabase = true,
-                UseMessageDatabase = true,
-            });
+        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
+        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
+        DeviceModel = "PC",
+        SystemLanguageCode = "zh-CN",
+        ApplicationVersion = "1.0.0",
+        DatabaseDirectory = Path.Combine(tdlRoot, "db"),
+        FilesDirectory = Path.Combine(tdlRoot, "files"),
+        UseFileDatabase = true,
+        UseChatInfoDatabase = true,
+        UseMessageDatabase = true,
+    });
 
-            // 启用代理
-            logger.ZLogInformation($"正在尝试连接代理...");
-            var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
-            await client.EnableProxyAsync(proxy.Id);
-            logger.ZLogInformation($"代理已启用。");
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPhoneNumber }:
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitCode }:
-            _authNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPassword }:
-            _authNeeded = true;
-            _passwordNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateUser:
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
-            // 连接状态更新
-            break;
-
-        default:
-            // 其他更新
-            break;
-    }
+    cbLogger.ZLogInformation($"正在尝试连接代理...");
+    var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
+    await client.EnableProxyAsync(proxy.Id);
+    cbLogger.ZLogInformation($"代理已启用。");
 }
 
 // 获取当前用户

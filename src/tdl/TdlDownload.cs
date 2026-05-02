@@ -8,6 +8,7 @@
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
 #:package YLFramework.ZLogging@1.0.3-alpha.6
+#:include TdlUpdateHandler.cs
 
 using System;
 using System.CommandLine;
@@ -22,10 +23,9 @@ using ZLogger;
 
 // 全局变量
 ManualResetEventSlim ReadyToAuthenticate = new();
-bool _authNeeded = false;
-bool _passwordNeeded = false;
 string tdlRoot = string.Empty;
 DownloadProgressBarManager _progressBarManager;
+TdlUpdateHandler _updateHandler;
 
 // 主函数
 async Task Main(TdClient client, string[] args)
@@ -90,14 +90,17 @@ async Task DownloadFiles(TdClient client, ParseResult parseResult, Option<string
 {
     try
     {
-        // Subscribing to all events
-        client.UpdateReceived += async (_, update) => { await ProcessUpdates(client, update, outputPath, logger); };
+        _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
+            .OnConfigureTdlibParameters(ConfigureTdlibParameters)
+            .OnFileUpdate(HandleFileUpdate);
+
+        client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, outputPath); };
 
         // Waiting until we get enough events to be in 'authentication ready' state
         ReadyToAuthenticate.Wait();
 
         // We may not need to authenticate since TdLib persists session in 'td.binlog' file.
-        if (_authNeeded)
+        if (_updateHandler.AuthNeeded)
         {
             // Interactively handling authentication
             await HandleAuthentication(client, logger);
@@ -144,7 +147,7 @@ async Task HandleAuthentication(TdClient client, ILogger logger)
             Code = code
         });
 
-        if (!_passwordNeeded) { return; }
+        if (!_updateHandler.PasswordNeeded) { return; }
 
         // 2FA may be enabled. Cloud password is required in that case.
         Console.Write("Insert the password: ");
@@ -168,47 +171,7 @@ async Task<TdApi.User> GetCurrentUser(TdClient client)
     return await client.ExecuteAsync(new TdApi.GetMe());
 }
 
-// 处理更新
-async Task ProcessUpdates(TdClient client, TdApi.Update update, string outputPath, ILogger logger)
-{
-    switch (update)
-    {
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitTdlibParameters }:
-            await ConfigureTdlibParameters(client, outputPath, logger);
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPhoneNumber }:
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitCode }:
-            _authNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPassword }:
-            _authNeeded = true;
-            _passwordNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateUser:
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
-            // You may trigger additional event on connection state change
-            break;
-
-        // 核心：处理文件状态更新
-        case TdApi.Update.UpdateFile updateFile:
-            await HandleFileUpdate(updateFile.File, logger);
-            break;
-
-        default:
-            // Add a breakpoint here to see other events
-            break;
-    }
-}
-
-// 配置 TDLib 参数
+// 配置 TDLib参数
 async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger logger)
 {
     // TdLib creates database in the current directory.
@@ -240,7 +203,7 @@ async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger 
 
 
 // 处理文件更新
-async Task HandleFileUpdate(TdApi.File file, ILogger logger)
+async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
 {
     // 将文件 ID 转换为字符串作为键
     string fileKey = file.Id.ToString();

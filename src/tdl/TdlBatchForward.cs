@@ -6,6 +6,7 @@
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
 #:package YLFramework.ZLogging@1.0.3-alpha.4
+#:include TdlUpdateHandler.cs
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic;
@@ -65,8 +66,7 @@ if (!Directory.Exists(tdlRoot))
 
 
 ManualResetEventSlim ReadyToAuthenticate = new();
-bool _authNeeded = false;
-bool _passwordNeeded = false;
+TdlUpdateHandler _updateHandler;
 using (var client = new TdClient())
 {
     client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
@@ -75,15 +75,18 @@ using (var client = new TdClient())
 
     try
     {
-        // Subscribing to all events
-        client.UpdateReceived += async (_, update) => { await ProcessUpdates(client, update); };
+        _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
+            .OnConfigureTdlibParameters(ConfigureTdlibParameters)
+            .OnFileUpdate(HandleFileUpdate);
+
+        client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, tdlRoot); };
 
         // Waiting until we get enough events to be in 'authentication ready' state
         ReadyToAuthenticate.Wait();
         // We may not need to authenticate since TdLib persists session in 'td.binlog' file.
         // See 'TdlibParameters' class for more information, or:
         // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1tdlib_parameters.html
-        if (_authNeeded)
+        if (_updateHandler.AuthNeeded)
         {
             // Interactively handling authentication
             await HandleAuthentication(client);
@@ -123,7 +126,7 @@ async Task HandleAuthentication(TdClient client)
         Code = code
     });
 
-    if (!_passwordNeeded) { return; }
+    if (!_updateHandler.PasswordNeeded) { return; }
 
 
     // 2FA may be enabled. Cloud password is required in that case.
@@ -136,84 +139,37 @@ async Task HandleAuthentication(TdClient client)
     });
 }
 
-async Task ProcessUpdates(TdClient client, TdApi.Update update)
+async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
 {
-    // Since Tdlib was made to be used in GUI application we need to struggle a bit and catch required events to determine our state.
-    // Below you can find example of simple authentication handling.
-    // Please note that AuthorizationStateWaitOtherDeviceConfirmation is not implemented.
-
-    switch (update)
+    await client.ExecuteAsync(new TdApi.SetTdlibParameters
     {
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitTdlibParameters }:
-            // TdLib creates database in the current directory.
-            // so create separate directory and switch to that dir.
-            await client.ExecuteAsync(new TdApi.SetTdlibParameters
-            {
-                ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
-                ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
-                DeviceModel = "PC",
-                SystemLanguageCode = "en",
-                ApplicationVersion = "1.0.0",
-                // 数据库放在用户目录下的 .tdl/db
-                DatabaseDirectory = Path.Combine(tdlRoot, "db"),
+        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
+        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
+        DeviceModel = "PC",
+        SystemLanguageCode = "en",
+        ApplicationVersion = "1.0.0",
+        DatabaseDirectory = Path.Combine(tdlRoot, "db"),
+        FilesDirectory = Path.Combine(tdlRoot, "files"),
+        UseFileDatabase = true,
+        UseChatInfoDatabase = true,
+        UseMessageDatabase = true,
+    });
+    logger.ZLogInformation($"正在尝试连接代理...");
+    var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
+    await client.EnableProxyAsync(proxy.Id);
+    logger.ZLogInformation($"代理已启用。");
+}
 
-                // 下载的文件放在用户目录下的 .tdl/files
-                FilesDirectory = Path.Combine(tdlRoot, "files"),
-                UseFileDatabase = true,
-                UseChatInfoDatabase = true,
-                UseMessageDatabase = true,
-            });
-            logger.ZLogInformation($"正在尝试连接代理...");
-            var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
-
-            // 启用该代理
-            await client.EnableProxyAsync(proxy.Id);
-            logger.ZLogInformation($"代理已启用。");
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPhoneNumber }:
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitCode }:
-            _authNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitPassword }:
-            _authNeeded = true;
-            _passwordNeeded = true;
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateUser:
-            ReadyToAuthenticate.Set();
-            break;
-
-        case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
-            // You may trigger additional event on connection state change
-            break;
-        // 核心：处理文件状态更新
-        case TdApi.Update.UpdateFile updateFile:
-            var file = updateFile.File;
-
-            if (file.Local.IsDownloadingActive)
-            {
-                // 记录下载进度
-                double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
-                logger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
-            }
-            else if (file.Local.IsDownloadingCompleted)
-            {
-                // 下载完成，Path 就是磁盘上的绝对路径
-                logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
-
-                // 这里可以触发你自己的业务逻辑，比如“文件下载后的自动处理”
-                // OnDownloadFinished(file);
-            }
-            break;
-        default:
-            // ReSharper disable once EmptyStatement
-            ;
-            // Add a breakpoint here to see other events
-            break;
+async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
+{
+    if (file.Local.IsDownloadingActive)
+    {
+        double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
+        logger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
+    }
+    else if (file.Local.IsDownloadingCompleted)
+    {
+        logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
     }
 }
 
