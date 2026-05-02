@@ -1,142 +1,148 @@
+#!/usr/bin/env dotnet
+
+#:include TdlUpdateHandler.cs
+
 #:package TDLib@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
+#:package System.CommandLine@*
 #:package Spectre.Console@*
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.4
-#:include TdlUpdateHandler.cs
+#:package YLFramework.ZLogging@1.0.3-alpha.7
+
+using System.CommandLine;
+using System.Text.RegularExpressions;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
-using Newtonsoft.Json;
+using Spectre.Console;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-/// <summary>
-/// 将转发消息转换为深度copy
-/// </summary>
-/// <value></value>
-
-using var factory = LoggerFactory.Create(logging =>
-{
-    logging.SetMinimumLevel(LogLevel.Trace);
-
-    // Add ZLogger provider to ILoggingBuilder
-    logging.AddZLoggerSpectreConsole();
-
-    logging.AddZLoggerFile("tdl.log", (options) =>
-    {
-        options.UsePlainTextFormatter((formatter) =>
-        {
-            formatter.SetPrefixFormatter($"{0:utc-datetime}|{1:short}|{2}|",
-               (in template, in i) =>
-               {
-                   template.Format(
-                               i.Timestamp,
-                               i.LogLevel,
-                               i.Category);
-               });
-            formatter.SetExceptionFormatter((writer, ex) => Utf8StringInterpolation.Utf8String.Format(writer, $"{ex.Message}"));
-        });
-    });
-});
-var logger = factory.CreateLogger("tdl");
-
-
-
-// 获取用户主目录，例如 C:\Users\Administrator
-string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-// 拼接 .tdl 目录
-string tdlRoot = Path.Combine(userProfile, ".tdl");
-
-// 如果需要区分账号（可选），可以再加一层子目录
-string databasePath = Path.Combine(tdlRoot, "db");
-string filesPath = Path.Combine(tdlRoot, "files");
-
-// 确保目录存在
-if (!Directory.Exists(tdlRoot))
-{
-    Directory.CreateDirectory(tdlRoot);
-    logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
-}
-
-
 ManualResetEventSlim ReadyToAuthenticate = new();
+string tdlRoot = string.Empty;
 TdlUpdateHandler _updateHandler;
+
 using (var client = new TdClient())
 {
     client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
+    await Main(client, args);
+}
 
+async Task Main(TdClient client, string[] args)
+{
+    var logger = InitializeLogger();
 
+    var optionSource = new Option<string>("--source") { Required = true, Description = "源频道/群聊消息链接" };
+    var optionTarget = new Option<string>("--target") { Required = true, Description = "目标频道/群聊链接或用户名" };
+    var optionOlder = new Option<bool>("--older") { DefaultValueFactory = _ => true, Description = "方向: true=向旧消息转发, false=向新消息转发" };
+    var optionLimit = new Option<int>("--limit") { DefaultValueFactory = _ => 0, Description = "最大转发数量, 0=全部" };
 
-    try
+    var rootCommand = new RootCommand("批量深度转发消息");
+    rootCommand.Options.Add(optionSource);
+    rootCommand.Options.Add(optionTarget);
+    rootCommand.Options.Add(optionOlder);
+    rootCommand.Options.Add(optionLimit);
+
+    var parseResult = rootCommand.Parse(args);
+    var sourceLink = parseResult.GetValue(optionSource);
+    var targetLink = parseResult.GetValue(optionTarget);
+    var directionOlder = parseResult.GetValue(optionOlder);
+    var limit = parseResult.GetValue(optionLimit);
+
+    InitializeEnvironment(logger);
+
+    _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
+        .OnConfigureTdlibParameters(ConfigureTdlibParameters)
+        .OnFileUpdate(HandleFileUpdate);
+
+    client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, tdlRoot); };
+    ReadyToAuthenticate.Wait();
+
+    if (_updateHandler.AuthNeeded)
     {
-        _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
-            .OnConfigureTdlibParameters(ConfigureTdlibParameters)
-            .OnFileUpdate(HandleFileUpdate);
-
-        client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, tdlRoot); };
-
-        // Waiting until we get enough events to be in 'authentication ready' state
-        ReadyToAuthenticate.Wait();
-        // We may not need to authenticate since TdLib persists session in 'td.binlog' file.
-        // See 'TdlibParameters' class for more information, or:
-        // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1tdlib_parameters.html
-        if (_updateHandler.AuthNeeded)
-        {
-            // Interactively handling authentication
-            await HandleAuthentication(client);
-        }
-
-        // Querying info about current user and some channels
-        var currentUser = await GetCurrentUser(client);
-
-        var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
-        var chatId = await GetChatIdFromLinkAsync(client, "https://t.me/atsJoe/19361");
-        await ForwardEverythingUntilTheEnd(client, chatId);
-
-
-        Console.WriteLine("Press ENTER to exit from application");
-        Console.ReadLine();
+        await HandleAuthentication(client, logger);
     }
-    catch (Exception e)
+
+    var currentUser = await GetCurrentUser(client);
+    var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
+    logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
+
+    var (sourceChatId, startMessageId) = await ResolveSourceLink(client, sourceLink, logger);
+    if (sourceChatId == 0)
     {
-        Console.WriteLine(e);
+        logger.ZLogError($"无法解析源链接: {sourceLink}");
+        return;
+    }
+
+    var targetChatId = await ResolveTargetLink(client, targetLink, logger);
+    if (targetChatId == 0)
+    {
+        logger.ZLogError($"无法解析目标链接: {targetLink}");
+        return;
+    }
+
+    var sourceChat = await client.GetChatAsync(sourceChatId);
+    var targetChat = await client.GetChatAsync(targetChatId);
+    logger.ZLogInformation($"源: [{sourceChat.Title}] ChatId={sourceChatId}, StartMsgId={startMessageId}");
+    logger.ZLogInformation($"目标: [{targetChat.Title}] ChatId={targetChatId}");
+    logger.ZLogInformation($"方向: {(directionOlder ? "向旧消息" : "向新消息")}, 限制: {(limit > 0 ? limit.ToString() : "无限制")}");
+
+    int totalForwarded;
+    if (directionOlder)
+    {
+        totalForwarded = await ForwardOlderDirection(client, sourceChatId, startMessageId, targetChatId, limit, logger);
+    }
+    else
+    {
+        totalForwarded = await ForwardNewerDirection(client, sourceChatId, startMessageId, targetChatId, limit, logger);
+    }
+
+    logger.ZLogInformation($"全部转发完成，共转发 {totalForwarded} 条消息");
+
+    Console.WriteLine("按 ENTER 键退出");
+    Console.ReadLine();
+}
+
+ILogger InitializeLogger()
+{
+    var factory = LoggerFactory.Create(logging =>
+    {
+        logging.SetMinimumLevel(LogLevel.Information);
+        logging.AddZLoggerSpectreConsoleAndFile("tdl-batch-forward.log");
+    });
+    return factory.CreateLogger("tdl-batch-forward");
+}
+
+void InitializeEnvironment(ILogger logger)
+{
+    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    tdlRoot = Path.Combine(userProfile, ".tdl");
+    if (!Directory.Exists(tdlRoot))
+    {
+        Directory.CreateDirectory(tdlRoot);
+        logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
     }
 }
-async Task HandleAuthentication(TdClient client)
+
+async Task HandleAuthentication(TdClient client, ILogger logger)
 {
-    // Setting phone number
     await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
     {
         PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
     });
 
-    // Telegram servers will send code to us
-    Console.Write("Insert the login code: ");
+    Console.Write("输入登录验证码: ");
     var code = Console.ReadLine();
-
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationCode
-    {
-        Code = code
-    });
+    await client.ExecuteAsync(new TdApi.CheckAuthenticationCode { Code = code });
 
     if (!_updateHandler.PasswordNeeded) { return; }
 
-
-    // 2FA may be enabled. Cloud password is required in that case.
-    Console.Write("Insert the password: ");
+    Console.Write("输入密码: ");
     var password = Console.ReadLine();
-
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword
-    {
-        Password = password
-    });
+    await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword { Password = password });
 }
 
 async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
@@ -154,10 +160,11 @@ async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger 
         UseChatInfoDatabase = true,
         UseMessageDatabase = true,
     });
-    logger.ZLogInformation($"正在尝试连接代理...");
+
+    cbLogger.ZLogInformation($"正在尝试连接代理...");
     var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
     await client.EnableProxyAsync(proxy.Id);
-    logger.ZLogInformation($"代理已启用。");
+    cbLogger.ZLogInformation($"代理已启用。");
 }
 
 async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
@@ -165,11 +172,11 @@ async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger
     if (file.Local.IsDownloadingActive)
     {
         double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
-        logger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
+        cbLogger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
     }
     else if (file.Local.IsDownloadingCompleted)
     {
-        logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
+        cbLogger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
     }
 }
 
@@ -177,132 +184,357 @@ async Task<TdApi.User> GetCurrentUser(TdClient client)
 {
     return await client.ExecuteAsync(new TdApi.GetMe());
 }
-/// <summary>
-/// 通过 Telegram 链接获取对应的 ChatId
-/// </summary>
-/// <param name="link">例如 https://t.me/R_E_STUDIO/21221</param>
-/// <returns>返回 ChatId，失败返回 0</returns>
-async Task<long> GetChatIdFromLinkAsync(TdClient client, string link)
+
+async Task<(long chatId, long messageId)> ResolveSourceLink(TdClient client, string link, ILogger logger)
 {
     try
     {
-        // 1. 调用内置的链接解析器
-        // 它会自动处理用户名(R_E_STUDIO)并查找对应的 Chat
         var linkInfo = await client.GetMessageLinkInfoAsync(link);
-
         if (linkInfo.Message != null)
         {
-            // 如果链接指向具体的一条消息
-            return linkInfo.Message.ChatId;
+            return (linkInfo.Message.ChatId, linkInfo.Message.Id);
         }
-
-        // 注意：有时链接可能只指向频道本身，而不包含消息 ID
-        // 此时需要检查 linkInfo 的其他字段（取决于 TDLib 版本）
-        // 或者如果 linkInfo 返回空，尝试搜索公共 Chat
-        logger.ZLogWarning($"链接解析成功，但未直接关联到消息。");
-
+        logger.ZLogWarning($"源链接未关联到消息: {link}");
     }
     catch (TdException ex)
     {
-        logger.ZLogError(ex, $"无法解析链接: {link}");
-
-        // // 备选方案：如果是简单的公开链接，尝试手动提取用户名搜索
-        // return await TrySearchPublicChat(client, link);
+        logger.ZLogError(ex, $"无法解析源链接: {link}");
     }
-    return 0;
+    return (0, 0);
 }
-async IAsyncEnumerable<TdApi.Chat> GetChannels(TdClient client, int limit)
+
+async Task<long> ResolveTargetLink(TdClient client, string link, ILogger logger)
 {
-    var chats = await client.ExecuteAsync(new TdApi.GetChats
+    try
     {
-        Limit = limit
-    });
-
-    foreach (var chatId in chats.ChatIds)
-    {
-        var chat = await client.ExecuteAsync(new TdApi.GetChat
+        var linkInfo = await client.GetMessageLinkInfoAsync(link);
+        if (linkInfo.Message != null)
         {
-            ChatId = chatId
-        });
-
-        if (chat.Type is TdApi.ChatType.ChatTypeSupergroup or TdApi.ChatType.ChatTypeBasicGroup or TdApi.ChatType.ChatTypePrivate)
-        {
-            yield return chat;
+            return linkInfo.Message.ChatId;
         }
     }
+    catch (TdException) { }
+
+    try
+    {
+        if (IsInviteLink(link))
+        {
+            var inviteInfo = await client.CheckChatInviteLinkAsync(link);
+            if (inviteInfo.ChatId != 0)
+            {
+                logger.ZLogInformation($"邀请链接已关联到 ChatId: {inviteInfo.ChatId}");
+                return inviteInfo.ChatId;
+            }
+            logger.ZLogWarning($"邀请链接有效但未关联到已有聊天，可能需要先加入: {link}");
+            return 0;
+        }
+    }
+    catch (TdException ex)
+    {
+        logger.ZLogError(ex, $"无法解析邀请链接: {link}");
+        return 0;
+    }
+
+    try
+    {
+        var username = ExtractUsername(link);
+        if (!string.IsNullOrEmpty(username))
+        {
+            var chat = await client.SearchPublicChatAsync(username);
+            if (chat != null)
+            {
+                return chat.Id;
+            }
+        }
+    }
+    catch (TdException) { }
+
+    if (long.TryParse(link.Trim(), out long chatId))
+    {
+        return chatId;
+    }
+
+    try
+    {
+        var foundChatId = await SearchChatByTitle(client, link, logger);
+        if (foundChatId != 0)
+        {
+            return foundChatId;
+        }
+    }
+    catch (TdException) { }
+
+    logger.ZLogWarning($"目标链接未关联到聊天: {link}");
+    return 0;
 }
 
-
-async Task ForwardEverythingUntilTheEnd(TdClient client, long chatId)
+bool IsInviteLink(string input)
 {
-    var me = await client.GetMeAsync();
-    long myId = me.Id;
+    if (string.IsNullOrWhiteSpace(input)) return false;
+    input = input.Trim();
+    if (input.StartsWith("https://t.me/+", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://t.me/joinchat/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://telegram.me/+", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://telegram.me/joinchat/", StringComparison.OrdinalIgnoreCase)) return true;
+    return false;
+}
 
-    // 从最新消息开始 (0 代表最新)
-    long lastMessageId = 0;
+async Task<long> SearchChatByTitle(TdClient client, string keyword, ILogger logger)
+{
+    logger.ZLogInformation($"在聊天列表中搜索: {keyword}");
+    var chatIds = await client.GetChatsAsync(limit: 200);
+    if (chatIds?.ChatIds == null) return 0;
+
+    foreach (var id in chatIds.ChatIds)
+    {
+        try
+        {
+            var chat = await client.GetChatAsync(id);
+            if (chat.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.ZLogInformation($"找到匹配聊天: [{chat.Title}] ChatId={chat.Id}");
+                return chat.Id;
+            }
+        }
+        catch { }
+    }
+
+    return 0;
+}
+
+string? ExtractUsername(string input)
+{
+    if (string.IsNullOrWhiteSpace(input)) return null;
+    input = input.Trim();
+    if (input.StartsWith("@")) return input.Substring(1);
+    if (!input.Contains("/")) return null;
+
+    var match = Regex.Match(input,
+        @"(?:https?:\/\/)?(?:t\.me|telegram\.me)\/(?<name>[^\/\?\#]+)",
+        RegexOptions.IgnoreCase);
+
+    if (!match.Success) return null;
+    var name = match.Groups["name"].Value;
+    if (name.StartsWith("+")) return null;
+    return name;
+}
+
+async Task<int> ForwardOlderDirection(TdClient client, long sourceChatId, long startMessageId, long targetChatId, int limit, ILogger logger)
+{
     int totalForwarded = 0;
+    long fromMessageId = startMessageId;
+    List<TdApi.Message>? pendingGroup = null;
     bool hasMore = true;
 
-    logger.ZLogInformation($"开始全量备份频道 {chatId} 到收藏夹...");
+    logger.ZLogInformation($"开始向旧消息方向转发...");
 
     while (hasMore)
     {
         try
         {
-            // 1. 获取历史消息 (每次取 100 条)
-            // offset = 0, from_message_id = lastMessageId
-            var history = await client.GetChatHistoryAsync(chatId, lastMessageId, 0, 100, false);
-
+            var history = await client.GetChatHistoryAsync(sourceChatId, fromMessageId, 0, 100, false);
             if (history.Messages_ == null || history.Messages_.Length == 0)
             {
-                logger.ZLogInformation($"已到达频道的最久远的一条消息。备份结束！");
                 hasMore = false;
                 break;
             }
 
-            // 2. 筛选并排序消息 ID
-            // 如果你只想转发视频，保留 .Where(...)；如果转发全部，去掉 .Where(...)
-            var idsToForward = history.Messages_
-                .Where(m => m.Content is TdApi.MessageContent.MessageVideo) // 只选视频
-                .Select(m => m.Id)
-                .OrderBy(id => id) // 必须升序，解决你之前的报错
-                .ToArray();
+            var messages = history.Messages_
+                .Where(m => m.Id <= startMessageId)
+                .OrderBy(m => m.Id)
+                .ToList();
 
-            // 3. 执行深度转发
-            if (idsToForward.Length > 0)
+            if (messages.Count == 0)
             {
-                var result = await client.ForwardMessagesAsync(
-                    chatId: myId,              // 目标：还是收藏夹
-                    fromChatId: chatId,          // 来源：从收藏夹里读
-                    messageIds: [.. idsToForward],
-                    sendCopy: true,            // 关键：剥离来源信息，实现深度拷贝
-                    removeCaption: false
-                );
-
-                totalForwarded += idsToForward.Length;
-                logger.ZLogInformation($"已转发 {totalForwarded} 条消息，当前进度 ID: {lastMessageId}");
+                fromMessageId = history.Messages_.Last().Id;
+                continue;
             }
 
-            // 5. 更新 lastMessageId，指向这一批里最旧的一条，为下一轮抓取做准备
-            lastMessageId = history.Messages_.Last().Id;
+            if (pendingGroup != null && pendingGroup.Count > 0)
+            {
+                messages = [.. pendingGroup, .. messages];
+                pendingGroup = null;
+            }
 
-            // 6. 防封限速：全量操作务必控制频率
+            var (toProcess, pending) = ExtractPendingMediaGroup(messages);
+            if (pending != null && pending.Count > 0)
+            {
+                pendingGroup = pending;
+            }
+
+            totalForwarded += await ForwardGroupedMessages(client, toProcess, sourceChatId, targetChatId, logger);
+
+            if (limit > 0 && totalForwarded >= limit)
+            {
+                logger.ZLogInformation($"已达到转发限制 {limit}");
+                break;
+            }
+
+            fromMessageId = history.Messages_.Last().Id;
             await Task.Delay(1500);
         }
-        catch (TdException ex) when (ex.Error.Code == 429) // 处理 Flood Wait
+        catch (TdException ex) when (ex.Error.Code == 429)
         {
-            int retryAfter = 10; // 默认等10秒
-            // 如果报错里包含等待秒数，可以解析出来
-            logger.ZLogWarning($"触发频率限制，等待 {0} 秒后继续...", retryAfter);
+            int retryAfter = 10;
+            logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
             await Task.Delay(retryAfter * 1000);
         }
         catch (Exception ex)
         {
-            logger.ZLogError(ex, $"全量备份循环中发生异常");
-            // 发生未知错误时，建议稍微停顿一下再重试，或者跳过这一批
+            logger.ZLogError(ex, $"转发过程中发生异常");
             await Task.Delay(5000);
         }
     }
 
-    logger.ZLogInformation($"全量任务执行完毕，共转发 {totalForwarded} 条视频。");
+    if (pendingGroup != null && pendingGroup.Count > 0)
+    {
+        totalForwarded += await ForwardGroupedMessages(client, pendingGroup, sourceChatId, targetChatId, logger);
+    }
+
+    return totalForwarded;
+}
+
+async Task<int> ForwardNewerDirection(TdClient client, long sourceChatId, long startMessageId, long targetChatId, int limit, ILogger logger)
+{
+    var newerMessages = new List<TdApi.Message>();
+    long fromMessageId = 0;
+    bool foundStart = false;
+
+    logger.ZLogInformation($"开始向新消息方向转发（从最新消息往回搜索）...");
+
+    while (!foundStart)
+    {
+        try
+        {
+            var history = await client.GetChatHistoryAsync(sourceChatId, fromMessageId, 0, 100, false);
+            if (history.Messages_ == null || history.Messages_.Length == 0)
+            {
+                break;
+            }
+
+            foreach (var msg in history.Messages_)
+            {
+                if (msg.Id >= startMessageId)
+                {
+                    newerMessages.Add(msg);
+                    if (limit > 0 && newerMessages.Count >= limit)
+                    {
+                        foundStart = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    foundStart = true;
+                    break;
+                }
+            }
+
+            fromMessageId = history.Messages_.Last().Id;
+            await Task.Delay(500);
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"搜索新消息时发生异常");
+            break;
+        }
+    }
+
+    newerMessages = newerMessages.OrderBy(m => m.Id).ToList();
+    logger.ZLogInformation($"找到 {newerMessages.Count} 条消息，开始转发...");
+
+    return await ForwardGroupedMessages(client, newerMessages, sourceChatId, targetChatId, logger);
+}
+
+(List<TdApi.Message> toProcess, List<TdApi.Message>? pending) ExtractPendingMediaGroup(List<TdApi.Message> messages)
+{
+    if (messages.Count == 0) return (messages, null);
+
+    var lastMsg = messages[^1];
+    if (lastMsg.MediaAlbumId == 0) return (messages, null);
+
+    var pending = new List<TdApi.Message>();
+    for (int i = messages.Count - 1; i >= 0; i--)
+    {
+        if (messages[i].MediaAlbumId == lastMsg.MediaAlbumId)
+        {
+            pending.Insert(0, messages[i]);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    var toProcess = messages.Take(messages.Count - pending.Count).ToList();
+    return (toProcess, pending);
+}
+
+async Task<int> ForwardGroupedMessages(TdClient client, List<TdApi.Message> messages, long sourceChatId, long targetChatId, ILogger logger)
+{
+    if (messages.Count == 0) return 0;
+
+    int totalForwarded = 0;
+    var groups = GroupMessagesByAlbum(messages);
+
+    foreach (var group in groups)
+    {
+        try
+        {
+            var ids = group.Select(m => m.Id).OrderBy(id => id).ToArray();
+
+            var result = await client.ForwardMessagesAsync(
+                chatId: targetChatId,
+                fromChatId: sourceChatId,
+                messageIds: ids,
+                sendCopy: true,
+                removeCaption: false
+            );
+
+            totalForwarded += ids.Length;
+            var albumLabel = group.First().MediaAlbumId != 0 ? $"分组:{group.First().MediaAlbumId}" : "独立消息";
+            logger.ZLogInformation($"已转发 {totalForwarded} 条消息 ({albumLabel}, 数量: {ids.Length})");
+
+            await Task.Delay(1000);
+        }
+        catch (TdException ex) when (ex.Error.Code == 429)
+        {
+            int retryAfter = 10;
+            logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
+            await Task.Delay(retryAfter * 1000);
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"转发消息组时出错");
+            await Task.Delay(3000);
+        }
+    }
+
+    return totalForwarded;
+}
+
+List<List<TdApi.Message>> GroupMessagesByAlbum(List<TdApi.Message> messages)
+{
+    var result = new List<List<TdApi.Message>>();
+    if (messages.Count == 0) return result;
+
+    var currentGroup = new List<TdApi.Message> { messages[0] };
+    long currentAlbumId = messages[0].MediaAlbumId;
+
+    for (int i = 1; i < messages.Count; i++)
+    {
+        if (messages[i].MediaAlbumId != 0 && messages[i].MediaAlbumId == currentAlbumId)
+        {
+            currentGroup.Add(messages[i]);
+        }
+        else
+        {
+            result.Add(currentGroup);
+            currentGroup = [messages[i]];
+            currentAlbumId = messages[i].MediaAlbumId;
+        }
+    }
+
+    result.Add(currentGroup);
+    return result;
 }
