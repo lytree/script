@@ -11,7 +11,7 @@
 #:package Spectre.Console.Ansi@0.55.2
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.6
+#:package YLFramework.ZLogging@1.0.3-alpha.7
 
 
 using System.CommandLine;
@@ -27,6 +27,7 @@ ManualResetEventSlim ReadyToAuthenticate = new();
 string tdlRoot = string.Empty;
 DownloadTracker _downloadTracker = new();
 HashSet<int> _downloadedFileIds = new HashSet<int>();
+Dictionary<int, long> _fileIdToAlbumId = new Dictionary<int, long>();
 TdlUpdateHandler _updateHandler;
 
 // 主函数
@@ -304,9 +305,10 @@ async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, str
     if (fileId > 0 && !_downloadedFileIds.Contains(fileId))
     {
         _downloadedFileIds.Add(fileId);
+        _fileIdToAlbumId[fileId] = message.MediaAlbumId;
         await client.DownloadFileAsync(fileId, 32, 0, 0, true);
         downloadedCount++;
-        logger.ZLogInformation($"队列下载: FileId: {fileId}");
+        logger.ZLogInformation($"队列下载: FileId: {fileId}, MediaAlbumId: {message.MediaAlbumId}");
     }
 
     return downloadedCount;
@@ -447,12 +449,23 @@ void OnDownloadFinished(TdApi.File file, string outputPath, ILogger logger)
     if (string.IsNullOrEmpty(sourcePath)) return;
 
     string fileName = Path.GetFileName(sourcePath);
-    string targetPath = Path.Combine(outputPath, "Downloads", fileName);
+
+    string albumSubPath;
+    if (_fileIdToAlbumId.TryGetValue(file.Id, out long albumId) && albumId != 0)
+    {
+        albumSubPath = Path.Combine("Downloads", albumId.ToString());
+    }
+    else
+    {
+        albumSubPath = "Downloads";
+    }
+
+    string targetPath = Path.Combine(outputPath, albumSubPath, fileName);
 
     try
     {
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-        File.Copy(sourcePath, targetPath, true);
+        File.Move(sourcePath, targetPath, true);
         logger.ZLogInformation($"文件已归档至: {targetPath}");
     }
     catch (Exception ex)
