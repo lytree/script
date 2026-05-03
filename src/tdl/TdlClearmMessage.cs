@@ -1,130 +1,248 @@
+#!/usr/bin/env dotnet
+
+#:include ../../env.cs
+#:include TdlUpdateHandler.cs
+
 #:package TDLib@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
+#:package System.CommandLine@*
 #:package Spectre.Console@*
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.6
-#:include TdlUpdateHandler.cs
+#:package YLFramework.ZLogging@1.0.3-alpha.7
+
+using System.CommandLine;
+using System.Text.RegularExpressions;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-/// <summary>
-/// 清理收藏的失效信息
-/// </summary>
-/// <value></value>
-
-using var factory = LoggerFactory.Create(logging =>
-{
-    logging.SetMinimumLevel(LogLevel.Trace);
-
-    logging.AddZLoggerSpectreConsoleAndFile("tdl.log");
-});
-var logger = factory.CreateLogger("tdl");
-
-
-
-// 获取用户主目录，例如 C:\Users\Administrator
-string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-// 拼接 .tdl 目录
-string tdlRoot = Path.Combine(userProfile, ".tdl");
-
-// 如果需要区分账号（可选），可以再加一层子目录
-string databasePath = Path.Combine(tdlRoot, "db");
-string filesPath = Path.Combine(tdlRoot, "files");
-
-// 确保目录存在
-if (!Directory.Exists(tdlRoot))
-{
-    Directory.CreateDirectory(tdlRoot);
-    logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
-}
-
-
-ManualResetEventSlim ReadyToAuthenticate = new();
-TdlUpdateHandler _updateHandler;
 using (var client = new TdClient())
 {
     client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
-
-
-
-    try
-    {
-        _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
-            .OnConfigureTdlibParameters(ConfigureTdlibParameters)
-            .OnFileUpdate(HandleFileUpdate);
-
-        client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, tdlRoot); };
-
-        // Waiting until we get enough events to be in 'authentication ready' state
-        ReadyToAuthenticate.Wait();
-        // We may not need to authenticate since TdLib persists session in 'td.binlog' file.
-        // See 'TdlibParameters' class for more information, or:
-        // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1tdlib_parameters.html
-        if (_updateHandler.AuthNeeded)
-        {
-            // Interactively handling authentication
-            await HandleAuthentication(client);
-        }
-
-        // Querying info about current user and some channels
-        var currentUser = await GetCurrentUser(client);
-
-        var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
-        logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
-
-        await CleanSavedMessages(client);
-
-        Console.WriteLine("Press ENTER to exit from application");
-        Console.ReadLine();
-    }
-    catch (Exception e)
-    {
-        Console.WriteLine(e);
-    }
+    await Main(client, args);
 }
-async Task HandleAuthentication(TdClient client)
+
+async Task Main(TdClient client, string[] args)
 {
-    // Setting phone number
+    var logger = InitializeLogger();
+
+    var optionChannel = new Option<string?>("--channel") { Required = false, Description = "频道/群聊链接或用户名 (默认: 收藏夹)" };
+    var optionContains = new Option<string>("--contains") { DefaultValueFactory = _ => "This channel can't be displayed", Description = "匹配消息中包含的文本内容" };
+    var optionSilent = new Option<bool>("--silent") { DefaultValueFactory = _ => false, Description = "静默删除，不询问确认" };
+    var optionLimit = new Option<int>("--limit") { DefaultValueFactory = _ => 0, Description = "最大处理数量, 0=全部" };
+
+    var rootCommand = new RootCommand("清理频道中包含指定内容的消息");
+    rootCommand.Options.Add(optionChannel);
+    rootCommand.Options.Add(optionContains);
+    rootCommand.Options.Add(optionSilent);
+    rootCommand.Options.Add(optionLimit);
+
+    var parseResult = rootCommand.Parse(args);
+    var channelLink = parseResult.GetValue(optionChannel);
+    var containsText = parseResult.GetValue(optionContains);
+    var silent = parseResult.GetValue(optionSilent);
+    var limit = parseResult.GetValue(optionLimit);
+
+    string tdlRoot = InitializeEnvironment(logger);
+
+    ManualResetEventSlim ready = new();
+    var handler = new TdlUpdateHandler(ready, logger)
+        .OnConfigureTdlibParameters(ConfigureTdlibParameters)
+        .OnFileUpdate(HandleFileUpdate);
+
+    client.UpdateReceived += async (_, update) => { await handler.ProcessUpdates(client, update, tdlRoot); };
+    ready.Wait();
+
+    if (handler.AuthNeeded)
+    {
+        await HandleAuthentication(client, handler);
+    }
+
+    var currentUser = await client.ExecuteAsync(new TdApi.GetMe());
+    var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
+    logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
+
+    long myId = currentUser.Id;
+
+    long chatId = await ResolveChatIdAsync(client, channelLink, logger);
+    if (chatId == 0)
+    {
+        chatId = myId;
+        logger.ZLogInformation($"未指定频道，默认使用收藏夹 (ChatId={myId})");
+    }
+
+    var chat = await client.GetChatAsync(chatId);
+    logger.ZLogInformation($"目标: [{chat.Title}] ChatId={chatId}");
+    logger.ZLogInformation($"匹配内容: \"{containsText}\"");
+    logger.ZLogInformation($"删除模式: {(silent ? "静默删除" : "交互确认")}");
+
+    int totalDeleted = await CleanMessages(client, chatId, containsText, silent, limit, logger);
+
+    logger.ZLogInformation($"清理完成，共删除 {totalDeleted} 条消息");
+
+    Console.WriteLine("按 ENTER 键退出");
+    Console.ReadLine();
+}
+
+async Task<int> CleanMessages(TdClient client, long chatId, string containsText, bool silent, int limit, ILogger logger)
+{
+    int totalDeleted = 0;
+    long fromMessageId = 0;
+    bool hasMore = true;
+    var matchedMessages = new List<(long MsgId, string Text)>();
+
+    logger.ZLogInformation($"开始扫描消息...");
+
+    while (hasMore)
+    {
+        try
+        {
+            var history = await client.GetChatHistoryAsync(chatId, fromMessageId, 0, 100, false);
+            if (history.Messages_ == null || history.Messages_.Length == 0)
+            {
+                hasMore = false;
+                break;
+            }
+
+            foreach (var msg in history.Messages_)
+            {
+                string? text = ExtractMessageText(msg);
+                if (text != null && text.Contains(containsText, StringComparison.OrdinalIgnoreCase))
+                {
+                    matchedMessages.Add((msg.Id, text.Length > 80 ? text[..80] + "..." : text));
+                }
+
+                if (limit > 0 && matchedMessages.Count >= limit)
+                {
+                    hasMore = false;
+                    break;
+                }
+            }
+
+            fromMessageId = history.Messages_.Last().Id;
+            await Task.Delay(300);
+        }
+        catch (TdException ex) when (ex.Error.Code == 429)
+        {
+            int retryAfter = ParseRetryAfter(ex);
+            logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
+            await Task.Delay(retryAfter * 1000);
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"扫描消息时发生异常");
+            await Task.Delay(5000);
+        }
+    }
+
+    if (matchedMessages.Count == 0)
+    {
+        logger.ZLogInformation($"未找到包含 \"{containsText}\" 的消息");
+        return 0;
+    }
+
+    logger.ZLogInformation($"共找到 {matchedMessages.Count} 条匹配消息");
+
+    if (!silent)
+    {
+        var table = new Table();
+        table.AddColumn("序号");
+        table.AddColumn("消息ID");
+        table.AddColumn("内容预览");
+        for (int i = 0; i < Math.Min(matchedMessages.Count, 50); i++)
+        {
+            table.AddRow((i + 1).ToString(), matchedMessages[i].MsgId.ToString(), matchedMessages[i].Text.EscapeMarkup());
+        }
+        if (matchedMessages.Count > 50)
+        {
+            table.AddRow("...", $"...共{matchedMessages.Count}条", "...");
+        }
+        AnsiConsole.Write(table);
+
+        if (!AnsiConsole.Confirm($"确认删除以上 {matchedMessages.Count} 条消息?"))
+        {
+            logger.ZLogInformation($"用户取消删除操作");
+            return 0;
+        }
+    }
+
+    int batchSize = 100;
+    for (int i = 0; i < matchedMessages.Count; i += batchSize)
+    {
+        var batch = matchedMessages.Skip(i).Take(batchSize).Select(m => m.MsgId).ToArray();
+        try
+        {
+            await client.DeleteMessagesAsync(chatId, batch, revoke: true);
+            totalDeleted += batch.Length;
+            logger.ZLogInformation($"已删除 {totalDeleted}/{matchedMessages.Count} 条消息");
+            await Task.Delay(500);
+        }
+        catch (TdException ex) when (ex.Error.Code == 429)
+        {
+            int retryAfter = ParseRetryAfter(ex);
+            logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
+            await Task.Delay(retryAfter * 1000);
+            i -= batchSize;
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"批量删除消息时发生异常");
+        }
+    }
+
+    return totalDeleted;
+}
+
+string? ExtractMessageText(TdApi.Message msg)
+{
+    return msg.Content switch
+    {
+        TdApi.MessageContent.MessageText t => t.Text?.Text,
+        TdApi.MessageContent.MessagePhoto p => p.Caption?.Text,
+        TdApi.MessageContent.MessageVideo v => v.Caption?.Text,
+        TdApi.MessageContent.MessageAudio a => a.Caption?.Text,
+        TdApi.MessageContent.MessageDocument d => d.Caption?.Text,
+        TdApi.MessageContent.MessageVoiceNote vn => vn.Caption?.Text,
+        TdApi.MessageContent.MessageAnimation ani => ani.Caption?.Text,
+        TdApi.MessageContent.MessagePinMessage pm => $"[PinMessage] MsgId={pm.MessageId}",
+        TdApi.MessageContent.MessageUnsupported u => "This channel can't be displayed",
+        _ => null
+    };
+}
+
+async Task HandleAuthentication(TdClient client, TdlUpdateHandler handler)
+{
     await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
     {
-        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.Process)
+        PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
     });
 
-    // Telegram servers will send code to us
-    Console.Write("Insert the login code: ");
+    Console.Write("输入登录验证码: ");
     var code = Console.ReadLine();
+    await client.ExecuteAsync(new TdApi.CheckAuthenticationCode { Code = code });
 
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationCode
-    {
-        Code = code
-    });
+    if (!handler.PasswordNeeded) { return; }
 
-    if (!_updateHandler.PasswordNeeded) { return; }
-
-
-    // 2FA may be enabled. Cloud password is required in that case.
-    Console.Write("Insert the password: ");
+    Console.Write("输入密码: ");
     var password = Console.ReadLine();
-
-    await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword
-    {
-        Password = password
-    });
+    await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword { Password = password });
 }
 
 async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
 {
+    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    string tdlRoot = Path.Combine(userProfile, ".tdl");
+
     await client.ExecuteAsync(new TdApi.SetTdlibParameters
     {
-        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.Process)),
-        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.Process),
+        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
+        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
         DeviceModel = "PC",
         SystemLanguageCode = "en",
         ApplicationVersion = "1.0.0",
@@ -134,250 +252,159 @@ async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger 
         UseChatInfoDatabase = true,
         UseMessageDatabase = true,
     });
-    logger.ZLogInformation($"正在尝试连接代理...");
+
+    cbLogger.ZLogInformation($"正在尝试连接代理...");
     var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
     await client.EnableProxyAsync(proxy.Id);
-    logger.ZLogInformation($"代理已启用。");
+    cbLogger.ZLogInformation($"代理已启用。");
 }
 
-async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
+Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
 {
     if (file.Local.IsDownloadingActive)
     {
         double percent = (double)file.Local.DownloadedSize / file.ExpectedSize * 100;
-        logger.ZLogInformation($"文件 {file.Id} 进度: {percent:F1}%");
+        cbLogger.ZLogTrace($"文件 {file.Id} 进度: {percent:F1}%");
     }
     else if (file.Local.IsDownloadingCompleted)
     {
-        logger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
+        cbLogger.ZLogInformation($"文件下载完成！本地路径: {file.Local.Path}");
     }
+    return Task.CompletedTask;
 }
 
-async Task<TdApi.User> GetCurrentUser(TdClient client)
+async Task<long> ResolveChatIdAsync(TdClient client, string? link, ILogger logger)
 {
-    return await client.ExecuteAsync(new TdApi.GetMe());
-}
-
-async IAsyncEnumerable<TdApi.Chat> GetChannels(TdClient client, int limit)
-{
-    var chats = await client.ExecuteAsync(new TdApi.GetChats
-    {
-        Limit = limit
-    });
-
-    foreach (var chatId in chats.ChatIds)
-    {
-        var chat = await client.ExecuteAsync(new TdApi.GetChat
-        {
-            ChatId = chatId
-        });
-
-        if (chat.Type is TdApi.ChatType.ChatTypeSupergroup or TdApi.ChatType.ChatTypeBasicGroup or TdApi.ChatType.ChatTypePrivate)
-        {
-            yield return chat;
-        }
-    }
-}
-async Task CleanSavedMessages(TdClient client)
-{
-
-    var clearn = "This channel can't be displayed";
-
-    var me = await client.GetMeAsync();
-
-    long chatId = me.Id;
-
-    long lastMessageId = 0;
-    int totalDeleted = 0;
-    List<long> charts = [];
-    logger.ZLogInformation($"开始扫描收藏夹...");
-    TdApi.Chat savedMessagesChat = await client.CreatePrivateChatAsync(chatId, false);
-    while (true)
-    {
-        var history = await client.GetChatHistoryAsync(chatId, lastMessageId, 0, 500, false);
-        Console.WriteLine($"本次拉取数量: {history.Messages_.Length}");
-        var toDelete = new List<long>();
-
-        foreach (var msg in history.Messages_)
-        {
-            lastMessageId = msg.Id; // 更新偏移量
-            if (msg.Content is TdLib.TdApi.MessageContent.MessageText text && text.Text is TdLib.TdApi.FormattedText form)
-            {
-
-                logger.ZLogInformation($"{msg.Id} {msg.ChatId} {form.Text} {form.Text.Contains(clearn)}");
-                if (form.Text.Contains(clearn))
-                {
-                    toDelete.Add(msg.Id);
-                }
-
-            }
-
-
-            // 3. 识别失效消息（通常是转发自已被封禁的频道）
-
-        }
-
-        // 4. 执行批量删除
-        if (toDelete.Count > 0)
-        {
-            await client.DeleteMessagesAsync(chatId, [.. toDelete], true);
-            totalDeleted += toDelete.Count;
-            logger.ZLogInformation($"本轮清理了 {toDelete.Count} 条，累计：{totalDeleted}");
-        }
-
-        // 如果获取到的消息少于请求数，说明处理完了
-        // if (history.Messages_.Length <= 0) break;
-
-        // 适当延迟防止被电报限流
-        await Task.Delay(200);
-    }
-
-}
-
-async Task ConvertForwardToCopy(TdClient client)
-{
-
-
-    var me = await client.GetMeAsync();
-
-    long chatId = me.Id;
-
-    long lastMessageId = 0;
-    int totalDeleted = 0;
-    List<long> charts = [];
-    logger.ZLogInformation($"开始扫描收藏夹...");
-    TdApi.Chat savedMessagesChat = await client.CreatePrivateChatAsync(chatId, false);
-    while (true)
-    {
-        var history = await client.GetChatHistoryAsync(chatId, lastMessageId, 0, 100, false);
-        Console.WriteLine($"本次拉取数量: {history.Messages_.Length}");
-
-        foreach (var msg in history.Messages_)
-        {
-            try
-            {
-                lastMessageId = msg.Id; // 更新偏移量
-                                        // 只有转发的消息才有必要转换
-                if (msg.ForwardInfo == null) continue;
-
-                // 调用转发接口，但开启 SendCopy
-                var result = await client.ForwardMessagesAsync(
-                    chatId: chatId,              // 目标：还是收藏夹
-                    fromChatId: chatId,          // 来源：从收藏夹里读
-                    messageIds: [msg.Id],
-                    sendCopy: true,            // 关键：剥离来源信息，实现深度拷贝
-                    removeCaption: false
-                );
-
-                if (result.Messages_.Length > 0)
-                {
-                    if (result.Messages_[0].SendingState is TdApi.MessageSendingState.MessageSendingStateFailed)
-                    {
-                        logger.ZLogWarning($"转换失败：服务器拒绝了该消息的 SendCopy (ID: {msg.Id})");
-                        // 这种情况下不要删除原消息
-                        continue;
-                    }
-
-                    // 进阶判断：检查内容是否有效
-                    // 如果源频道炸了，SendCopy 出来的消息内容往往是 MessageUnsupported 或内容为空
-                    if (result.Messages_[0].Content is TdApi.MessageContent.MessageUnsupported)
-                    {
-                        logger.ZLogWarning($"转换失败：内容不受支持或已丢失 (ID: {msg.Id})");
-                        // 这种占位符没用，删掉它
-
-                        continue;
-                    }
-                    await Task.Delay(2000);
-                    // 拷贝成功后，删除原有的转发版本
-                    await client.DeleteMessagesAsync(chatId, [msg.Id], true);
-
-                    logger.ZLogInformation($"成功转换消息 {msg.Id} 为深度拷贝版本。新 ID: {result.Messages_[0].Id}");
-                }
-            }
-            catch (TdException ex)
-            {
-                // 如果原频道已经炸了，ForwardInfo 虽然在，但内容可能读不到了
-                logger.ZLogError(ex, $"无法转换消息 {msg.Id}，原频道可能已完全封禁或内容受限。");
-            }
-        }
-
-        // 如果获取到的消息少于请求数，说明处理完了
-        // if (history.Messages_.Length <= 0) break;
-
-        // 适当延迟防止被电报限流
-        await Task.Delay(200);
-
-
-
-
-    }
-
-}
-
-void OnDownloadFinished(TdApi.File file)
-{
-    string sourcePath = file.Local.Path;
-    string fileName = Path.GetFileName(sourcePath);
-    string targetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonVideos), "Downloads", fileName);
+    if (string.IsNullOrWhiteSpace(link)) return 0;
 
     try
     {
-        // 确保目标目录存在
-        Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-
-        // 移动或复制文件到你的业务文件夹
-        File.Copy(sourcePath, targetPath, true);
-
-        logger.ZLogInformation($"【业务处理】文件已归档至: {targetPath}");
-    }
-    catch (Exception ex)
-    {
-        logger.ZLogError(ex, $"处理下载完成的文件时出错");
-    }
-}
-/// <summary>
-/// 解析 Telegram 链接并提取其中的核心 FileId
-/// </summary>
-/// <param name="link">例如 https://t.me/R_E_STUDIO/21221</param>
-/// <returns>返回 FileId，如果未找到则返回 0</returns>
-async Task<int> GetFileIdFromLinkAsync(TdClient client, string link)
-{
-    try
-    {
-        // 1. 调用 TDLib 内置的链接解析器
         var linkInfo = await client.GetMessageLinkInfoAsync(link);
-
-        if (linkInfo.Message == null)
+        if (linkInfo.Message != null)
         {
-            logger.ZLogWarning($"链接解析成功，但未找到对应的消息内容: {link}");
+            return linkInfo.Message.ChatId;
+        }
+    }
+    catch (TdException) { }
+
+    try
+    {
+        if (IsInviteLink(link))
+        {
+            var inviteInfo = await client.CheckChatInviteLinkAsync(link);
+            if (inviteInfo.ChatId != 0)
+            {
+                logger.ZLogInformation($"邀请链接已关联到 ChatId: {inviteInfo.ChatId}");
+                return inviteInfo.ChatId;
+            }
             return 0;
         }
-
-        var message = linkInfo.Message;
-
-        // 2. 提取 FileId (根据内容类型)
-        int fileId = message.Content switch
-        {
-            TdApi.MessageContent.MessageDocument d => d.Document.Document_.Id,
-            TdApi.MessageContent.MessageVideo v => v.Video.Video_.Id,
-            TdApi.MessageContent.MessagePhoto p => p.Photo.Sizes.LastOrDefault()?.Photo.Id ?? 0,
-            TdApi.MessageContent.MessageAudio a => a.Audio.Audio_.Id,
-            TdApi.MessageContent.MessageAnimation ani => ani.Animation.Animation_.Id,
-            TdApi.MessageContent.MessageVideoNote vn => vn.VideoNote.Video.Id,
-            TdApi.MessageContent.MessageVoiceNote vce => vce.VoiceNote.Voice.Id,
-            _ => 0
-        };
-
-        if (fileId == 0)
-        {
-            logger.ZLogWarning($"消息 ID {message.Id} 中不包含可下载的文件。类型: {message.Content.GetType().Name}");
-        }
-
-        return fileId;
     }
-    catch (TdException ex)
+    catch (TdException) { }
+
+    try
     {
-        logger.ZLogError(ex, $"解析链接时发生 TDLib 错误: {link}");
-        return 0;
+        var username = ExtractUsername(link);
+        if (!string.IsNullOrEmpty(username))
+        {
+            var chat = await client.SearchPublicChatAsync(username);
+            if (chat != null)
+            {
+                return chat.Id;
+            }
+        }
     }
+    catch (TdException) { }
+
+    if (long.TryParse(link.Trim(), out long chatId))
+    {
+        return chatId;
+    }
+
+    try
+    {
+        var chatIds = await client.GetChatsAsync(limit: 200);
+        if (chatIds?.ChatIds != null)
+        {
+            foreach (var id in chatIds.ChatIds)
+            {
+                try
+                {
+                    var chat = await client.GetChatAsync(id);
+                    if (chat.Title.Contains(link, StringComparison.OrdinalIgnoreCase))
+                    {
+                        logger.ZLogInformation($"找到匹配聊天: [{chat.Title}] ChatId={chat.Id}");
+                        return chat.Id;
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+    catch { }
+
+    return 0;
+}
+
+bool IsInviteLink(string input)
+{
+    if (string.IsNullOrWhiteSpace(input)) return false;
+    input = input.Trim();
+    if (input.StartsWith("https://t.me/+", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://t.me/joinchat/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://telegram.me/+", StringComparison.OrdinalIgnoreCase)) return true;
+    if (input.StartsWith("https://telegram.me/joinchat/", StringComparison.OrdinalIgnoreCase)) return true;
+    return false;
+}
+
+string? ExtractUsername(string input)
+{
+    if (string.IsNullOrWhiteSpace(input)) return null;
+    input = input.Trim();
+    if (input.StartsWith("@")) return input.Substring(1);
+    if (!input.Contains("/")) return null;
+
+    var match = Regex.Match(input,
+        @"(?:https?:\/\/)?(?:t\.me|telegram\.me)\/(?<name>[^\/\?\#]+)",
+        RegexOptions.IgnoreCase);
+
+    if (!match.Success) return null;
+    var name = match.Groups["name"].Value;
+    if (name.StartsWith("+")) return null;
+    return name;
+}
+
+int ParseRetryAfter(TdException ex)
+{
+    if (ex.Error?.Message != null)
+    {
+        var match = Regex.Match(ex.Error.Message, @"(\d+)");
+        if (match.Success && int.TryParse(match.Groups[1].Value, out int seconds) && seconds > 0)
+        {
+            return Math.Min(seconds + 2, 300);
+        }
+    }
+    return 15;
+}
+
+ILogger InitializeLogger()
+{
+    var factory = LoggerFactory.Create(logging =>
+    {
+        logging.SetMinimumLevel(LogLevel.Information);
+        logging.AddZLoggerSpectreConsoleAndFile("tdl-clear.log");
+    });
+    return factory.CreateLogger("tdl-clear");
+}
+
+string InitializeEnvironment(ILogger logger)
+{
+    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    string tdlRoot = Path.Combine(userProfile, ".tdl");
+    if (!Directory.Exists(tdlRoot))
+    {
+        Directory.CreateDirectory(tdlRoot);
+        logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
+    }
+    return tdlRoot;
 }
