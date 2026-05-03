@@ -17,6 +17,7 @@ public class TdlUpdateHandler
     private Action _onAuthReady;
     private Func<TdClient, string, ILogger, Task> _onConfigureTdlibParameters;
     private Func<TdApi.File, string, ILogger, Task> _onFileUpdate;
+    private Func<TdApi.Update, ILogger, Task> _onMessageUpdate;
 
     public bool AuthNeeded { get; private set; }
     public bool PasswordNeeded { get; private set; }
@@ -37,6 +38,7 @@ public class TdlUpdateHandler
     public TdlUpdateHandler OnAuthReady(Action handler) { _onAuthReady = handler; return this; }
     public TdlUpdateHandler OnConfigureTdlibParameters(Func<TdClient, string, ILogger, Task> handler) { _onConfigureTdlibParameters = handler; return this; }
     public TdlUpdateHandler OnFileUpdate(Func<TdApi.File, string, ILogger, Task> handler) { _onFileUpdate = handler; return this; }
+    public TdlUpdateHandler OnMessageUpdate(Func<TdApi.Update, ILogger, Task> handler) { _onMessageUpdate = handler; return this; }
 
     public async Task ProcessUpdates(TdClient client, TdApi.Update update, string outputPath)
     {
@@ -169,12 +171,15 @@ public class TdlUpdateHandler
             #region UpdateNewMessage / UpdateMessage - 消息相关
             case TdApi.Update.UpdateNewMessage unm:
                 logger.ZLogTrace($"新消息: ChatId={unm.Message.ChatId}, MsgId={unm.Message.Id}");
+                if (_onMessageUpdate != null) await _onMessageUpdate(unm, logger);
                 break;
             case TdApi.Update.UpdateMessageSendSucceeded umss:
                 logger.ZLogTrace($"消息发送成功: MsgId={umss.Message.Id}");
+                if (_onMessageUpdate != null) await _onMessageUpdate(umss, logger);
                 break;
             case TdApi.Update.UpdateMessageSendFailed umsf:
                 logger.ZLogWarning($"消息发送失败: MsgId={umsf.Message.Id}, 错误: {umsf.Error.Message}");
+                if (_onMessageUpdate != null) await _onMessageUpdate(umsf, logger);
                 break;
             case TdApi.Update.UpdateMessageSendAcknowledged umsa:
                 logger.ZLogTrace($"消息发送已确认: ChatId={umsa.ChatId}, MsgId={umsa.MessageId}");
@@ -217,6 +222,7 @@ public class TdlUpdateHandler
                 break;
             case TdApi.Update.UpdateDeleteMessages udm:
                 logger.ZLogTrace($"消息删除: ChatId={udm.ChatId}, 数量={udm.MessageIds.Length}");
+                if (_onMessageUpdate != null) await _onMessageUpdate(udm, logger);
                 break;
             case TdApi.Update.UpdatePendingTextMessage uptm:
                 logger.ZLogTrace($"待发送文本消息更新: ChatId={uptm.ChatId}");
