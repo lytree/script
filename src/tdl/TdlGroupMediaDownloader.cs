@@ -38,19 +38,23 @@ async Task Main(TdClient client, string[] args)
 
     // 解析命令行参数
     var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Path.EntryPointFileDirectoryPath(), "data") };
-    var optionLink = new Option<string>("--link") { Required = true, DefaultValueFactory = (res) => "https://t.me/fancha103/5153" };
+    var optionLink = new Option<string[]>("--link") { Required = true, DefaultValueFactory = (res) => ["https://t.me/fancha103/5153"] };
     var optionIncludeComments = new Option<bool>("--include-comments") { DefaultValueFactory = (res) => true };
     var rootCommand = new RootCommand { optionOutput, optionLink, optionIncludeComments };
     var parseResult = rootCommand.Parse(args);
     var outputPath = parseResult.GetValue(optionOutput);
-    var link = parseResult.GetValue(optionLink);
+    var links = parseResult.GetValue(optionLink);
     var includeComments = parseResult.GetValue(optionIncludeComments);
 
     // 初始化全局环境变量
     InitializeEnvironment(logger);
 
     // 下载文件
-    await DownloadMediaFromLink(client, link, includeComments, outputPath, logger);
+    foreach (var link in links)
+    {
+        logger.ZLogInformation($"开始处理链接: {link}");
+        await DownloadMediaFromLink(client, link, includeComments, outputPath, logger);
+    }
 
     // 等待所有下载完成
     logger.ZLogInformation($"等待所有下载完成...");
@@ -425,7 +429,7 @@ async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
     {
         if (file.Local.DownloadedSize == 0)
         {
-            AnsiConsole.WriteLine($"开始下载: {fileId}");
+            // AnsiConsole.WriteLine($"开始下载: {fileId}");
             _downloadTracker.StartDownload(fileId, fileId.ToString(), file.ExpectedSize);
         }
         else
@@ -437,7 +441,7 @@ async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
     {
 
         _downloadTracker.CompleteDownload(fileId, fileId.ToString(), file.Size);
-        logger.ZLogInformation($"文件 {fileId} 下载完成！本地路径: {file.Local.Path}");
+        // logger.ZLogInformation($"文件 {fileId} 下载完成！本地路径: {file.Local.Path}");
         OnDownloadFinished(file, outputPath, logger);
     }
 }
@@ -514,7 +518,7 @@ public class DownloadTracker
             AnsiConsole.Progress()
                 .AutoRefresh(true)
                 .AutoClear(false)
-                .HideCompleted(true)
+                .HideCompleted(false)
                 .Columns(
                     new TaskDescriptionColumn(),
                     new ProgressBarColumn(),
