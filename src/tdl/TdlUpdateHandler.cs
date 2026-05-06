@@ -89,18 +89,18 @@ public class TdlUpdateHandler
                 logger.ZLogWarning($"需要购买 Premium 才能继续操作");
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateReady }:
-                logger.ZLogInformation($"授权成功，已登录");
+                logger.ZLogDebug($"授权成功，已登录");
                 _readyToAuthenticate.Set();
                 _onAuthReady?.Invoke();
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateLoggingOut }:
-                logger.ZLogInformation($"正在登出...");
+                logger.ZLogDebug($"正在登出...");
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateClosing }:
-                logger.ZLogInformation($"TDLib 正在关闭...");
+                logger.ZLogDebug($"TDLib 正在关闭...");
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateClosed }:
-                logger.ZLogInformation($"TDLib 已关闭");
+                logger.ZLogDebug($"TDLib 已关闭");
                 break;
             #endregion
 
@@ -109,16 +109,16 @@ public class TdlUpdateHandler
                 logger.ZLogWarning($"等待网络连接...");
                 break;
             case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateConnecting }:
-                logger.ZLogInformation($"正在连接到 Telegram 服务器...");
+                logger.ZLogDebug($"正在连接到 Telegram 服务器...");
                 break;
             case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateConnectingToProxy }:
-                logger.ZLogInformation($"正在通过代理连接...");
+                logger.ZLogDebug($"正在通过代理连接...");
                 break;
             case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateReady }:
-                logger.ZLogInformation($"已连接到 Telegram 服务器");
+                logger.ZLogDebug($"已连接到 Telegram 服务器");
                 break;
             case TdApi.Update.UpdateConnectionState { State: TdApi.ConnectionState.ConnectionStateUpdating }:
-                logger.ZLogInformation($"正在更新数据...");
+                logger.ZLogDebug($"正在更新数据...");
                 break;
             #endregion
 
@@ -128,10 +128,10 @@ public class TdlUpdateHandler
                     await _onFileUpdate(updateFile.File, outputPath, logger);
                 break;
             case TdApi.Update.UpdateFileGenerationStart ufgStart:
-                logger.ZLogInformation($"文件生成开始: {ufgStart.GenerationId}, 原始路径: {ufgStart.OriginalPath}, 目标: {ufgStart.DestinationPath}");
+                logger.ZLogDebug($"文件生成开始: {ufgStart.GenerationId}, 原始路径: {ufgStart.OriginalPath}, 目标: {ufgStart.DestinationPath}");
                 break;
             case TdApi.Update.UpdateFileGenerationStop ufgStop:
-                logger.ZLogInformation($"文件生成结束: {ufgStop.GenerationId}");
+                logger.ZLogDebug($"文件生成结束: {ufgStop.GenerationId}");
                 break;
             case TdApi.Update.UpdateFileDownload ufDownload:
                 logger.ZLogTrace($"文件下载状态更新: FileId={ufDownload.FileId}, IsPaused={ufDownload.IsPaused}");
@@ -459,10 +459,10 @@ public class TdlUpdateHandler
 
             #region UpdateServiceNotification / TermsOfService - 服务通知/条款
             case TdApi.Update.UpdateServiceNotification usn:
-                logger.ZLogInformation($"服务通知: Type={usn.Type}");
+                logger.ZLogDebug($"服务通知: Type={usn.Type}");
                 break;
             case TdApi.Update.UpdateTermsOfService utos:
-                logger.ZLogInformation($"服务条款更新");
+                logger.ZLogDebug($"服务条款更新");
                 break;
             #endregion
 

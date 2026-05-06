@@ -137,12 +137,12 @@ async Task DownloadMediaFromLink(TdClient client, string link, bool includeComme
         if (message.MediaAlbumId != 0)
         {
             logger.ZLogInformation($"发现媒体组: {message.MediaAlbumId}");
-            totalDownloaded += await DownloadMediaGroupByAlbumId(client, chatId, message.MediaAlbumId, messageId, outputPath, logger);
+            totalDownloaded += await DownloadMediaGroupByAlbumId(client, chatId, message.MediaAlbumId, messageId, outputPath, messageId, logger);
         }
         else
         {
             // 非媒体组消息，直接下载单个文件
-            totalDownloaded += await DownloadMessageMedia(client, message, outputPath, logger);
+            totalDownloaded += await DownloadMessageMedia(client, message, outputPath, messageId, logger);
         }
 
         // 下载评论区媒体
@@ -168,7 +168,7 @@ async Task DownloadMediaFromLink(TdClient client, string link, bool includeComme
                     else
                     {
                         logger.ZLogInformation($"评论 {comment.Id} 包含媒体，FileId: {fileId}");
-                        commentsDownloaded += await DownloadMessageMedia(client, comment, outputPath, logger);
+                        commentsDownloaded += await DownloadMessageMedia(client, comment, outputPath, messageId, logger);
                     }
                 }
 
@@ -187,7 +187,7 @@ async Task DownloadMediaFromLink(TdClient client, string link, bool includeComme
 }
 
 // 根据媒体组ID下载媒体组
-async Task<int> DownloadMediaGroupByAlbumId(TdClient client, long chatId, long mediaAlbumId, long startMessageId, string outputPath, ILogger logger)
+async Task<int> DownloadMediaGroupByAlbumId(TdClient client, long chatId, long mediaAlbumId, long startMessageId, string outputPath, long messageId, ILogger logger)
 {
     int totalDownloaded = 0;
 
@@ -282,7 +282,7 @@ async Task<int> DownloadMediaGroupByAlbumId(TdClient client, long chatId, long m
         // 下载找到的所有媒体
         foreach (var msg in foundMessages.OrderBy(m => m.Id))
         {
-            var count = await DownloadMessageMedia(client, msg, outputPath, logger);
+            var count = await DownloadMessageMedia(client, msg, outputPath, messageId, logger);
             totalDownloaded += count;
         }
 
@@ -297,7 +297,7 @@ async Task<int> DownloadMediaGroupByAlbumId(TdClient client, long chatId, long m
 }
 
 // 下载消息中的媒体
-async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, string outputPath, ILogger logger)
+async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, string outputPath, long messageId, ILogger logger)
 {
     int fileId = GetFileIdFromMessage(message);
     int downloadedCount = 0;
@@ -305,10 +305,10 @@ async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, str
     if (fileId > 0 && !_downloadedFileIds.Contains(fileId))
     {
         _downloadedFileIds.Add(fileId);
-        _fileIdToAlbumId[fileId] = message.MediaAlbumId;
+        _fileIdToAlbumId[fileId] = messageId;
         await client.DownloadFileAsync(fileId, 32, 0, 0, true);
         downloadedCount++;
-        logger.ZLogInformation($"队列下载: FileId: {fileId}, MediaAlbumId: {message.MediaAlbumId}");
+        logger.ZLogInformation($"队列下载: FileId: {fileId},LinkId: {messageId} , MediaAlbumId: {message.MediaAlbumId}");
     }
 
     return downloadedCount;
@@ -435,9 +435,9 @@ async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
     }
     else if (file.Local.IsDownloadingCompleted)
     {
-        logger.ZLogInformation($"文件 {fileId} 下载完成！本地路径: {file.Local.Path}");
-        _downloadTracker.CompleteDownload(fileId, fileId.ToString(), file.Size);
 
+        _downloadTracker.CompleteDownload(fileId, fileId.ToString(), file.Size);
+        logger.ZLogInformation($"文件 {fileId} 下载完成！本地路径: {file.Local.Path}");
         OnDownloadFinished(file, outputPath, logger);
     }
 }
@@ -464,9 +464,17 @@ void OnDownloadFinished(TdApi.File file, string outputPath, ILogger logger)
 
     try
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-        File.Move(sourcePath, targetPath, true);
-        logger.ZLogInformation($"文件已归档至: {targetPath}");
+        if (File.Exists(sourcePath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
+            File.Move(sourcePath, targetPath, true);
+            logger.ZLogInformation(@$"文件已归档至: {sourcePath}  {targetPath}");
+        }
+        else
+        {
+            logger.ZLogInformation(@$"文件不存在: {sourcePath} ");
+        }
+
     }
     catch (Exception ex)
     {
@@ -534,8 +542,10 @@ public class DownloadTracker
                                 if (info.IsCompleted)
                                 {
                                     task.Value = task.MaxValue;
-                                    task.Description = $"[green]✓[/] [cyan]{fileId}[/] [green]下载完成[/]";
+                                    task.Description = $"[green]✓[/] [cyan]{fileId}[/] [green]下载完成[/] \n";
                                     task.StopTask();
+                                    // ✅ 手动换行
+                                    AnsiConsole.WriteLine();
                                 }
                                 else
                                 {
@@ -608,7 +618,9 @@ public class DownloadTracker
                 _downloads[fileId] = info with { DownloadedSize = size, TotalSize = size, IsCompleted = true };
             }
             _completedFiles.Add(fileId);
-            AnsiConsole.MarkupLine($"[green]✓[/] [bold]{fileId}[/] 下载完成！");
+            // AnsiConsole.MarkupLine($"[green]✓[/] [bold]{fileId}[/] 下载完成！");
+            // ✅ 手动换行
+            // AnsiConsole.WriteLine();
         }
     }
 
