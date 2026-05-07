@@ -143,7 +143,90 @@ public class TdlForwardService
         _logger.ZLogWarning($"目标链接未关联到聊天: {link}");
         return 0;
     }
+    public async Task<int> DeepCopyForward(ForwardDbContext db, long sourceChatId, long startMessageId, long targetChatId, int limit, bool forwardComments)
+    {
+        int totalForwarded = 0;
+        int totalSkipped = 0;
+        long fromMessageId = startMessageId;
+        List<TdApi.Message>? pendingGroup = null;
+        bool hasMore = true;
 
+        _logger.ZLogInformation($"开始向旧消息方向转发...");
+
+        while (hasMore)
+        {
+            try
+            {
+                var history = await _client.GetChatHistoryAsync(sourceChatId, fromMessageId, 0, 100, false);
+                if (history.Messages_ == null || history.Messages_.Length == 0)
+                {
+                    hasMore = false;
+                    break;
+                }
+
+                var messages = history.Messages_
+                    .Where(m => m.Id <= fromMessageId && m.ForwardInfo != null)
+                    .OrderBy(m => m.Id)
+                    .ToList();
+
+                if (messages.Count == 0)
+                {
+                    fromMessageId = history.Messages_.Last().Id;
+                    continue;
+                }
+
+                if (pendingGroup != null && pendingGroup.Count > 0)
+                {
+                    messages = [.. pendingGroup, .. messages];
+                    pendingGroup = null;
+                }
+
+                var (toProcess, pending) = ExtractPendingMediaGroup(messages);
+                if (pending != null && pending.Count > 0)
+                {
+                    pendingGroup = pending;
+                }
+
+                var (forwarded, skipped) = await ForwardGroupedMessages(db, toProcess, sourceChatId, targetChatId, forwardComments);
+                totalForwarded += forwarded;
+                totalSkipped += skipped;
+
+                if (limit > 0 && totalForwarded >= limit)
+                {
+                    _logger.ZLogInformation($"已达到转发限制 {limit}");
+                    break;
+                }
+
+                fromMessageId = history.Messages_.Last().Id;
+                await Task.Delay(1000);
+            }
+            catch (TdException ex) when (ex.Error.Code == 429)
+            {
+                int retryAfter = ParseRetryAfter(ex);
+                _logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
+                await Task.Delay(retryAfter * 1000);
+            }
+            catch (Exception ex)
+            {
+                _logger.ZLogError(ex, $"转发过程中发生异常");
+                await Task.Delay(5000);
+            }
+        }
+
+        if (pendingGroup != null && pendingGroup.Count > 0)
+        {
+            var (forwarded, skipped) = await ForwardGroupedMessages(db, pendingGroup, sourceChatId, targetChatId, forwardComments);
+            totalForwarded += forwarded;
+            totalSkipped += skipped;
+        }
+
+        if (totalSkipped > 0)
+        {
+            _logger.ZLogInformation($"跳过已转发消息 {totalSkipped} 条");
+        }
+
+        return totalForwarded;
+    }
     public async Task<int> ForwardOlderDirection(ForwardDbContext db, long sourceChatId, long startMessageId, long targetChatId, int limit, bool forwardComments)
     {
         int totalForwarded = 0;
