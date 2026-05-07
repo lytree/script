@@ -1,89 +1,386 @@
-Context: I need you to write a File-based C# program. IMPORTANT: Assume I am using .NET 10 and C# 14. Since your training data might only cover up to .NET 9, please strictly follow the "New Syntax & Rules" section below to understand how to write this specific type of application.
+# AGENTS.md
 
-New Syntax & Rules (The "File-based" Model):
+## Project Type
 
-No Project File: The entire application lives in a single .cs file. Do NOT generate a .csproj file.
-Directives (The Magic Part): In .NET 10, we can define project metadata directly in the C# file using C# preprocessor directives with #: or #!.
-Must be at the top: These lines must appear before any code (including using statements).
-#:package <Name>@<Version>: Replaces <PackageReference>. Use this to add NuGet packages.
-Example: #:package Newtonsoft.Json@13.0.3
-#:sdk <SdkName>: Replaces the top-level SDK attribute in a csproj.
-Example: #:sdk Microsoft.NET.Sdk.Web (For Web APIs/Minimal APIs)
-Default: If omitted, it behaves like a Console app.
-#:property <Key>=<Value>: Replaces MSBuild properties inside <PropertyGroup>.
-Example: #:property TargetFramework=net10.0
-Example: #:property LangVersion=preview
-#:project <Path>: References another project file.
-#:include <Path>: References another cs file.
+This repository uses:
 
-Unix Shebang:
-Always include #!/usr/bin/env dotnet as the very first line to make it executable on Unix-like systems.
-Code Structure:
-Use Top-level statements. Do not wrap the main logic in a class Program { static void Main... }.
-You can define classes, records, and methods at the bottom of the file or interspersed (local functions).
-Arguments:
-Command-line parameters can be parsed and accessed as global variables through #:package System.CommandLine@*.
+- .NET File-Based Apps
+- Single-file C# CLI applications
+- Lightweight automation scripts
+- Minimal project structure
 
-System.CommandLine Version > 2
+Primary goal:
 
-Creating New C# Files:
-When creating new C# files in this project, always follow the file-based model with the following structure:
-1. Start with the Unix shebang line: #!/usr/bin/env dotnet
-2. Add any required package references using #:package directives
-3. Include #:package System.CommandLine@* for command-line parameter parsing
-4. Add using statements for required namespaces
-5. Use top-level statements for the main logic
-6. Define classes, records, and methods as needed
+> Fast, readable, portable CLI tooling.
 
+---
 
-Run C# Files:
-dotnet run XXXXX.cs -- args
+# Core Principles
 
+Priority order:
 
+1. Readability
+2. Simplicity
+3. CLI user experience
+4. Cross-platform compatibility
+5. Performance
 
-Example Web Template (Strictly follow this pattern):
+This repository is NOT intended for:
 
-#!/usr/bin/env dotnet
-#:sdk Microsoft.NET.Sdk.Web
-#:property PublishAot=false
-#:property EnableDefaultEmbeddedResourceItems=true
-#:property JsonSerializerIsReflectionEnabledByDefault=true
-#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
-#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
-var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:8500");
+- Enterprise layered architecture
+- ASP.NET applications
+- Microservice platforms
+- Heavy dependency injection systems
 
-var app = builder.Build();
-app.MapGet("/", (string? query) => $"hello,{query ?? ""}");
+---
 
-app.Run();
+# Mandatory Rules
 
+## MUST
 
-Example Cli Template (Strictly follow this pattern):
+- Use .NET File-Based Apps
+- Prefer single-file implementations
+- Keep startup fast
+- Prefer async APIs
+- Keep dependencies minimal
+- Support Windows/Linux/macOS
+- Optimize for CLI workflows
 
-#!/usr/bin/env dotnet
-#:sdk Microsoft.NET.Sdk.Web
-#:property EnableDefaultEmbeddedResourceItems=true
-#:property JsonSerializerIsReflectionEnabledByDefault=true
-#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
-#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
-#:property PublishAot=false
+## MUST NOT
+
+- Generate `.sln`
+- Generate complex `.csproj`
+- Introduce ASP.NET Host
+- Introduce heavy DI frameworks
+- Introduce unnecessary abstractions
+- Over-engineer simple scripts
+
+---
+
+# Runtime Requirements
+
+Recommended SDK:
+
+- .NET 10+
+
+Run scripts using:
+
+```bash
+dotnet run app.cs -- args
+```
+
+Or:
+
+```bash
+dotnet app.cs -- args
+```
+
+---
+
+# Linux/macOS Executable Scripts
+
+Use shebang:
+
+```csharp
+#!/usr/bin/env dotnet run
+```
+
+Grant execute permission:
+
+```bash
+chmod +x app.cs
+```
+
+Run directly:
+
+```bash
+./app.cs
+```
+
+---
+
+# File-Based Apps Directives
+
+## NuGet Packages
+
+```csharp
 #:package Spectre.Console@*
-#:package System.CommandLine@*
-using System.CommandLine;
-using System.Text;
+```
+
+## Include Files
+
+```csharp
+#:include ./shared.cs
+```
+
+## Project Reference
+
+```csharp
+#:project ../Shared/Shared.csproj
+```
+
+---
+
+# Coding Style
+
+## Prefer
+
+- Top-level statements
+- File-scoped namespace
+- `var`
+- Small focused functions
+- Explicit naming
+- Early returns
+- Async IO
+
+Example:
+
+```csharp
+var json = await client.GetStringAsync(url);
+```
+
+---
+
+## Avoid
+
+- Deep abstraction layers
+- Massive inheritance trees
+- Large static utility classes
+- Mutable global state
+- Excessive LINQ allocations
+- Builder-pattern abuse
+
+---
+
+# CLI Design Rules
+
+All CLI tools SHOULD support:
+
+| Argument | Description |
+|---|---|
+| --help | Show help |
+| --version | Show version |
+| --verbose | Verbose logging |
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | General Error |
+| 2 | Invalid Arguments |
+
+---
+
+# Console Output
+
+Preferred libraries:
+
+- Spectre.Console
+- System.Console
+
+Recommended colors:
+
+| Type | Color |
+|---|---|
+| Success | Green |
+| Warning | Yellow |
+| Error | Red |
+| Info | Blue |
+
+Example:
+
+```csharp
+AnsiConsole.MarkupLine("[green]Done[/]");
+```
+
+---
+
+# Logging
+
+Preferred:
+
+- ZLogger
+- ILogger
+- Spectre.Console
+
+Requirements:
+
+- Errors MUST go to stderr
+- Long-running tasks SHOULD show progress
+- Avoid console spam
+
+---
+
+# Progress UI
+
+Long-running operations SHOULD display progress indicators.
+
+Example:
+
+```csharp
+await AnsiConsole.Progress()
+    .StartAsync(async ctx =>
+    {
+        var task = ctx.AddTask("Processing");
+
+        while (!task.IsFinished)
+        {
+            await Task.Delay(100);
+            task.Increment(1);
+        }
+    });
+```
+
+---
+
+# Error Handling
+
+Always fail explicitly.
+
+Example:
+
+```csharp
+try
+{
+    await RunAsync();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine(ex);
+    Environment.Exit(1);
+}
+```
+
+---
+
+# Recommended Packages
+
+## CLI UI
+
+```csharp
+#:package Spectre.Console@*
+```
+
+## Logging
+
+```csharp
+#:package ZLogger@*
+```
+
+## HTTP
+
+```csharp
+#:package Flurl.Http@*
+```
+
+## Command Execution
+
+```csharp
+#:package CliWrap@3.8.1
+```
+
+---
+
+# Performance Guidelines
+
+Prefer:
+
+- async/await
+- ArrayPool
+- Span<T>
+- Memory<T>
+
+Avoid:
+
+- Frequent string concatenation
+- Blocking IO
+- Large temporary allocations
+
+---
+
+# Cross Platform Rules
+
+Scripts MUST work on:
+
+- Windows
+- Linux
+- macOS
+
+Avoid:
+
+- Hardcoded Windows paths
+- cmd.exe-specific logic
+- PowerShell-only implementations
+
+Prefer:
+
+```csharp
+Path.Combine(...)
+```
+
+---
+
+# AI Agent Rules
+
+AI agents modifying this repository MUST:
+
+- Preserve File-Based App structure
+- Preserve CLI-first design
+- Keep implementations simple
+- Avoid unnecessary frameworks
+- Avoid unnecessary abstractions
+- Avoid splitting tiny scripts into many files
+
+When possible:
+
+- Prefer direct implementations
+- Prefer readability over architecture purity
+
+---
+
+# Example Template
+
+```csharp
+#!/usr/bin/env dotnet run
+
+#:package Spectre.Console@*
+
 using Spectre.Console;
 
-var rootCommand = new RootCommand("Description");
-
-var optionVerbose = new Option<bool>("--verbose", "Enable verbose output");
-var optionOutput = new Option<string?>("--output", "Output to file");
-rootCommand.Options.Add(optionVerbose);
-rootCommand.Options.Add(optionOutput);
-
-rootCommand.SetAction((res) =>
+try
 {
+    AnsiConsole.MarkupLine("[green]CLI Started[/]");
+}
+catch (Exception ex)
+{
+    AnsiConsole.WriteException(ex);
+    Environment.Exit(1);
+}
+```
 
-});
+---
 
-rootCommand.Parse(args);
+# Documentation Requirements
+
+Every CLI tool SHOULD document:
+
+- Purpose
+- Arguments
+- Examples
+- Exit codes
+
+---
+
+# Repository Philosophy
+
+This repository values:
+
+- Fast iteration
+- Small scripts
+- Low maintenance cost
+- Excellent CLI experience
+- Cross-platform execution
+
+Keep things practical.
+
