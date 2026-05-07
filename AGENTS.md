@@ -200,9 +200,7 @@ AnsiConsole.MarkupLine("[green]Done[/]");
 
 Preferred:
 
-- ZLogger
-- ILogger
-- Spectre.Console
+- YLFramework.ZLogging@1.0.3-alpha.7
 
 Requirements:
 
@@ -259,13 +257,29 @@ catch (Exception ex)
 ## CLI UI
 
 ```csharp
-#:package Spectre.Console@*
+#:package System.CommandLine@*
 ```
 
 ## Logging
 
 ```csharp
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
+#:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
+#:package YLFramework.ZLogging@1.0.3-alpha.7
+```
+初始化日志
+```csharp
+ILogger InitializeLogger()
+{
+    var factory = LoggerFactory.Create(logging =>
+    {
+        logging.SetMinimumLevel(LogLevel.Information);
+        logging.AddZLoggerSpectreConsoleAndFile("xxxxxx.log");
+    });
+    return factory.CreateLogger("xxxxxxx");
+}
 ```
 
 ## HTTP
@@ -277,7 +291,7 @@ catch (Exception ex)
 ## Command Execution
 
 ```csharp
-#:package CliWrap@3.8.1
+#:package CliWrap@*
 ```
 
 ---
