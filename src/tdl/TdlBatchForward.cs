@@ -34,12 +34,12 @@ async Task Main(TdClient client, string[] args)
 {
     var logger = InitializeLogger();
 
-    var optionSource = new Option<string>("--source") { Required = true, Description = "源频道/群聊消息链接" };
-    var optionSourceId = new Option<long?>("--sourceId") { Required = false, Description = "源频道/群聊消息Id" };
-    var optionTarget = new Option<string>("--target") { Required = true, Description = "目标频道/群聊链接或用户名" };
+    var optionSource = new Option<string>("--source") { Required = true, Description = "源频道/群聊消息链接" ,DefaultValueFactory = _ => "https://t.me/sourpuss1988/177" };
+    var optionSourceId = new Option<long?>("--sourceId") { Required = false, Description = "源频道/群聊消息Id"   };
+    var optionTarget = new Option<string>("--target") { Required = true, Description = "目标频道/群聊链接或用户名" ,DefaultValueFactory = _ => "https://t.me/lytree_tubao" };
     var optionOlder = new Option<bool>("--older") { DefaultValueFactory = _ => true, Description = "方向: true=向旧消息转发, false=向新消息转发" };
     var optionLimit = new Option<int>("--limit") { DefaultValueFactory = _ => 0, Description = "最大转发数量, 0=全部" };
-    var optionComments = new Option<bool>("--comments") { DefaultValueFactory = _ => false, Description = "是否转发评论" };
+    var optionComments = new Option<bool>("--comments") { DefaultValueFactory = _ => true, Description = "是否转发评论" };
 
     var rootCommand = new RootCommand("批量深度转发消息");
     rootCommand.Options.Add(optionSource);
