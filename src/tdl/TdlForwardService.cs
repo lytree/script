@@ -566,7 +566,7 @@ public class TdlForwardService
                         await Task.Delay(5000);
                         continue;
                     }
-
+                    await Task.Delay(1000);
                     var forwardedMessages = group.Where(m => idsToForward.Contains(m.Id)).ToList();
                     await RecordForwardedMessages(db, sourceChatId, targetChatId, forwardedMessages, isSuccess: true);
 
@@ -620,28 +620,65 @@ public class TdlForwardService
 
             try
             {
-                var comments = await _client.GetMessageThreadHistoryAsync(
-                    chatId: sourceChatId,
-                    messageId: sourceMsg.Id,
-                    fromMessageId: 0,
-                    offset: 0,
-                    limit: 50
-                );
+                var replyInfo = sourceMsg.InteractionInfo?.ReplyInfo;
+                if (replyInfo == null || replyInfo.ReplyCount == 0) continue;
 
-                if (comments.Messages_ == null || comments.Messages_.Length == 0) continue;
+                var allComments = new List<TdApi.Message>();
+                long fromMsgId = 0;
+                bool hasMore = true;
 
-                _logger.ZLogInformation($"转发评论: MsgId={sourceMsg.Id}, 评论数={comments.Messages_.Length}");
+                while (hasMore)
+                {
+                    var page = await _client.GetMessageThreadHistoryAsync(
+                        chatId: sourceChatId,
+                        messageId: sourceMsg.Id,
+                        fromMessageId: fromMsgId,
+                        offset: 0,
+                        limit: 100
+                    );
 
-                var commentIds = comments.Messages_.Select(m => m.Id).ToArray();
-                await _client.ForwardMessagesAsync(
-                    chatId: targetChatId,
-                    fromChatId: sourceChatId,
-                    messageIds: commentIds,
-                    sendCopy: true,
-                    removeCaption: false
-                );
+                    if (page.Messages_ == null || page.Messages_.Length == 0)
+                    {
+                        hasMore = false;
+                        break;
+                    }
 
-                await Task.Delay(500);
+                    allComments.AddRange(page.Messages_);
+
+                    if (page.Messages_.Length < 100)
+                    {
+                        hasMore = false;
+                    }
+                    else
+                    {
+                        fromMsgId = page.Messages_.Min(m => m.Id);
+                        await Task.Delay(300);
+                    }
+                }
+
+                if (allComments.Count == 0) continue;
+
+                var commentList = allComments.OrderBy(m => m.Id).ToList();
+                var groups = GroupMessagesByAlbum(commentList);
+                _logger.ZLogInformation($"转发评论: MsgId={sourceMsg.Id}, 评论数={commentList.Count}, 分组数={groups.Count}");
+
+                foreach (var group in groups)
+                {
+                    var groupIds = group.Select(m => m.Id).OrderBy(id => id).ToArray();
+                    var sourceCommonChatId = group.Select(m => m.ChatId).OrderBy(id => id).First();
+                    var albumLabel = group[0].MediaAlbumId != 0 ? $"分组:{group[0].MediaAlbumId}" : $"独立评论 {group[0].Id}";
+
+                    await _client.ForwardMessagesAsync(
+                        chatId: targetChatId,
+                        fromChatId: sourceCommonChatId,
+                        messageIds: groupIds,
+                        sendCopy: true,
+                        removeCaption: false
+                    );
+
+                    _logger.ZLogInformation($"已转发评论 {albumLabel}, 数量: {groupIds.Length}");
+                    await Task.Delay(5000);
+                }
             }
             catch (TdException ex)
             {
