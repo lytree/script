@@ -232,15 +232,23 @@ string ExtractFileNameFromUrl(string url)
         if (lastSlash >= 0)
         {
             var fileName = path[(lastSlash + 1)..];
-            if (!string.IsNullOrEmpty(fileName) && (fileName.Contains('.') || fileName.Contains('?')))
+            if (!string.IsNullOrEmpty(fileName))
             {
                 var queryIndex = fileName.IndexOf('?');
                 if (queryIndex >= 0)
                 {
                     fileName = fileName[..queryIndex];
                 }
-                if (!string.IsNullOrEmpty(fileName) && Path.HasExtension(fileName))
+                if (!string.IsNullOrEmpty(fileName))
                 {
+                    if (fileName.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+                    {
+                        fileName = fileName[..^5] + ".mp4";
+                    }
+                    else if (!Path.HasExtension(fileName))
+                    {
+                        fileName += ".mp4";
+                    }
                     return fileName;
                 }
             }
@@ -438,67 +446,78 @@ async Task DownloadSegmentsAsync(HttpClient client, M3u8Info m3u8Info, string te
     var totalBytes = 0L;
     var total = m3u8Info.Segments.Count;
     var startTime = DateTime.Now;
+    var lockObj = new object();
 
-    AnsiConsole.Markup($"[cyan]Downloading {total} segments with {concurrency} threads...[/]\n");
-
-    using var semaphore = new SemaphoreSlim(concurrency);
-    var tasks = new List<Task>();
-
-    foreach (var segment in m3u8Info.Segments)
-    {
-        await semaphore.WaitAsync();
-
-        var task = Task.Run(async () =>
+    await AnsiConsole.Progress()
+        .AutoClear(false)
+        .Columns(
+            new TaskDescriptionColumn(),
+            new ProgressBarColumn(),
+            new PercentageColumn(),
+            new RemainingTimeColumn(),
+            new SpinnerColumn())
+        .StartAsync(async ctx =>
         {
-            try
-            {
-                var fileName = $"{segment.Index:D5}.ts";
-                var filePath = Path.Combine(tempDir, fileName);
+            var progressTask = ctx.AddTask("[cyan]Downloading segments[/]", maxValue: total);
 
-                for (int attempt = 0; attempt < retryCount; attempt++)
+            using var semaphore = new SemaphoreSlim(concurrency);
+            var tasks = new List<Task>();
+
+            foreach (var segment in m3u8Info.Segments)
+            {
+                await semaphore.WaitAsync();
+
+                var localSegment = segment;
+                var t = Task.Run(async () =>
                 {
                     try
                     {
-                        var data = await DownloadSegmentAsync(client, segment.Url);
+                        var fileName = $"{localSegment.Index:D5}.ts";
+                        var filePath = Path.Combine(tempDir, fileName);
 
-                        if (key != null && method != null)
+                        for (int attempt = 0; attempt < retryCount; attempt++)
                         {
-                            data = DecryptSegment(data, key, segment.Index, m3u8Info.KeyInfo?.Iv, method);
+                            try
+                            {
+                                var data = await DownloadSegmentAsync(client, localSegment.Url);
+
+                                if (key != null && method != null)
+                                {
+                                    data = DecryptSegment(data, key, localSegment.Index, m3u8Info.KeyInfo?.Iv, method);
+                                }
+
+                                await File.WriteAllBytesAsync(filePath, data);
+                                Interlocked.Increment(ref completed);
+                                Interlocked.Add(ref totalBytes, data.Length);
+                                progressTask.Increment(1);
+                                return;
+                            }
+                            catch
+                            {
+                                if (attempt < retryCount - 1)
+                                    await Task.Delay(500 * (1 << attempt));
+                            }
                         }
-
-                        await File.WriteAllBytesAsync(filePath, data);
-                        Interlocked.Increment(ref completed);
-                        Interlocked.Add(ref totalBytes, data.Length);
-
-                        var elapsed = (DateTime.Now - startTime).TotalSeconds;
-                        var speed = elapsed > 0 ? totalBytes / elapsed : 0;
-                        if (completed % 10 == 0 || completed == total)
+                        lock (lockObj)
                         {
-                            AnsiConsole.Markup($"[cyan]Progress: {completed}/{total} ({FormatSpeed(speed)})[/]\r");
+                            failedSegments.Add(localSegment.Index);
                         }
-                        return;
+                        progressTask.Increment(1);
                     }
-                    catch
+                    finally
                     {
-                        if (attempt < retryCount - 1)
-                            await Task.Delay(500 * (1 << attempt));
+                        semaphore.Release();
                     }
-                }
-                failedSegments.Add(segment.Index);
+                });
+                tasks.Add(t);
             }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
-        tasks.Add(task);
-    }
 
-    await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks);
+        });
 
     var elapsed = DateTime.Now - startTime;
     var speed = elapsed.TotalSeconds > 0 ? totalBytes / elapsed.TotalSeconds : 0;
-    AnsiConsole.Markup($"\n[green]Downloaded {completed}/{total} segments ({FormatSize(totalBytes)}) in {elapsed.TotalSeconds:F1}s ({FormatSpeed(speed)})[/]");
+    AnsiConsole.MarkupLine($"[green]Downloaded {completed}/{total} segments ({FormatSize(totalBytes)}) in {elapsed.TotalSeconds:F1}s ({FormatSpeed(speed)})[/]");
 
     if (failedSegments.Count > 0)
     {
@@ -712,17 +731,28 @@ async Task MergeWithFFmpegAsync(string tempDir, string outputPath, string ffmpeg
 {
     var listPath = Path.Combine(tempDir, "filelist.txt");
 
-    AnsiConsole.Markup("[cyan]Merging with FFmpeg...[/]");
+    await AnsiConsole.Status()
+        .Spinner(Spinner.Known.Dots)
+        .StartAsync("[cyan]Merging with FFmpeg...[/]", async ctx =>
+        {
+            var result = await Cli.Wrap(ffmpegPath)
+                .WithArguments($"-y -f concat -safe 0 -i \"{listPath}\" -c copy \"{outputPath}\"")
+                .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
+                {
+                    if (!string.IsNullOrEmpty(line))
+                    {
+                        ctx.Status($"[cyan]Merging:[/] [dim]{Markup.Escape(line)}[/]");
+                    }
+                }))
+                .ExecuteAsync();
 
-    var result = await Cli.Wrap(ffmpegPath)
-        .WithArguments($"-y -f concat -safe 0 -i \"{listPath}\" -c copy \"{outputPath}\"")
-        .WithStandardErrorPipe(PipeTarget.ToDelegate(line => Console.WriteLine(line)))
-        .ExecuteAsync();
+            if (result.ExitCode != 0)
+            {
+                throw new Exception($"FFmpeg exited with code {result.ExitCode}");
+            }
+        });
 
-    if (result.ExitCode != 0)
-    {
-        throw new Exception($"FFmpeg exited with code {result.ExitCode}");
-    }
+    AnsiConsole.MarkupLine("[bold green]Merge completed![/]");
 }
 
 record M3u8Info(List<TsSegment> Segments, EncryptInfo? KeyInfo);

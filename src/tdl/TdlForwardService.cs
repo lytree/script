@@ -576,7 +576,7 @@ public class TdlForwardService
 
                     if (forwardComments && result.Messages_ != null)
                     {
-                        await ForwardCommentsForMessages(sourceChatId, targetChatId, forwardedMessages, result.Messages_);
+                        await ForwardCommentsForMessages(db, sourceChatId, targetChatId, forwardedMessages, result.Messages_);
                     }
 
                     await Task.Delay(1000);
@@ -609,7 +609,7 @@ public class TdlForwardService
         return (totalForwarded, totalSkipped);
     }
 
-    async Task ForwardCommentsForMessages(long sourceChatId, long targetChatId, List<TdApi.Message> sourceMessages, TdApi.Message[] forwardedMessages)
+    async Task ForwardCommentsForMessages(ForwardDbContext db, long sourceChatId, long targetChatId, List<TdApi.Message> sourceMessages, TdApi.Message[] forwardedMessages)
     {
         for (int i = 0; i < sourceMessages.Count; i++)
         {
@@ -617,7 +617,7 @@ public class TdlForwardService
             TdApi.Message? forwardedMsg = i < forwardedMessages.Length ? forwardedMessages[i] : null;
 
             if (forwardedMsg == null) continue;
-
+            int totalSkipped = 0;
             try
             {
                 var replyInfo = sourceMsg.InteractionInfo?.ReplyInfo;
@@ -655,27 +655,64 @@ public class TdlForwardService
                         await Task.Delay(300);
                     }
                 }
-
                 if (allComments.Count == 0) continue;
 
                 var commentList = allComments.OrderBy(m => m.Id).ToList();
                 var groups = GroupMessagesByAlbum(commentList);
                 _logger.ZLogInformation($"转发评论: MsgId={sourceMsg.Id}, 评论数={commentList.Count}, 分组数={groups.Count}");
-
+                int retryCount = 0;
+                string? lastError = null;
                 foreach (var group in groups)
                 {
+                    var (idsToForward, skippedIds) = await FilterAlreadyForwarded(db, sourceChatId, targetChatId, group);
+                    totalSkipped += skippedIds.Count;
+
+                    if (idsToForward.Count == 0)
+                    {
+                        continue;
+                    }
                     var groupIds = group.Select(m => m.Id).OrderBy(id => id).ToArray();
                     var sourceCommonChatId = group.Select(m => m.ChatId).OrderBy(id => id).First();
                     var albumLabel = group[0].MediaAlbumId != 0 ? $"分组:{group[0].MediaAlbumId}" : $"独立评论 {group[0].Id}";
 
-                    await _client.ForwardMessagesAsync(
-                        chatId: targetChatId,
-                        fromChatId: sourceCommonChatId,
-                        messageIds: groupIds,
-                        sendCopy: true,
-                        removeCaption: false
-                    );
+                    var result = await _client.ForwardMessagesAsync(
+                         chatId: targetChatId,
+                         fromChatId: sourceCommonChatId,
+                         messageIds: groupIds,
+                         sendCopy: true,
+                         removeCaption: false
+                     );
+                    if (result.Messages_ != null)
+                    {
+                        foreach (var rMsg in result.Messages_)
+                        {
+                            RegisterPendingSend(rMsg.Id);
+                        }
+                    }
 
+                    var sendError = await WaitForSendResultAsync(
+                        result.Messages_?.Select(m => m.Id).ToArray() ?? [], 10);
+
+                    if (sendError != null)
+                    {
+                        if (sendError.Code == 429 || (sendError.Message?.Contains("Too Many Requests") ?? false))
+                        {
+                            int retryAfter = ParseRetryAfterFromError(sendError);
+                            retryCount++;
+                            _logger.ZLogWarning($"异步发送触发频率限制 (第{retryCount}次)，等待 {retryAfter} 秒后重试...");
+                            await Task.Delay(retryAfter * 1000);
+                            continue;
+                        }
+
+                        lastError = $"{sendError.Code}: {sendError.Message}";
+                        retryCount++;
+                        _logger.ZLogError($"消息异步发送失败 (第{retryCount}次重试): {lastError}");
+                        await Task.Delay(5000);
+                        continue;
+                    }
+                    await Task.Delay(1000);
+                    var forwardedCommentsMessages = group.Where(m => groupIds.Contains(m.Id)).ToList();
+                    await RecordForwardedMessages(db, sourceChatId, targetChatId, forwardedCommentsMessages, isSuccess: true);
                     _logger.ZLogInformation($"已转发评论 {albumLabel}, 数量: {groupIds.Length}");
                     await Task.Delay(5000);
                 }

@@ -8,7 +8,7 @@ This repository uses:
 - Single-file C# CLI applications
 - Lightweight automation scripts
 - Minimal project structure
-
+- dotnet-file-based-apps
 Primary goal:
 
 > Fast, readable, portable CLI tooling.

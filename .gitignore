@@ -369,3 +369,4 @@ src/Leaf/*
 src/Http/*
 src/Bytes/huaneng.cs
 src/Http/api.cs
+*.mp4
