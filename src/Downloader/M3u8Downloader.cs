@@ -12,15 +12,16 @@ using System.Text.RegularExpressions;
 using Spectre.Console;
 using CliWrap;
 
-var optionUrl = new Option<string>("--url")
+var optionUrl = new Option<string[]>("--url")
 {
-    Description = "The m3u8 URL to download (required)",
-    DefaultValueFactory = (res) => "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8"
+    Description = "M3U8 URLs (can be multiple)",
+    Arity = ArgumentArity.OneOrMore
 };
 
-var optionOutput = new Option<string>("--output")
+var optionOutput = new Option<string[]>("--output")
 {
-    Description = "Output file path (default: filename from URL or output.mp4)"
+    Description = "Output files (must match url count)",
+    Arity = ArgumentArity.ZeroOrMore
 };
 
 var optionConcurrency = new Option<int>("--concurrency")
@@ -72,8 +73,8 @@ var speedContainer = new SpeedContainer();
 
 rootCommand.SetAction((ParseResult parseResult) =>
 {
-    var url = parseResult.GetValue(optionUrl);
-    var output = parseResult.GetValue(optionOutput) ?? ExtractFileNameFromUrl(url);
+    var urls = parseResult.GetValue(optionUrl) ?? [];
+    var outputs = parseResult.GetValue(optionOutput) ?? [];
     var concurrency = parseResult.GetValue(optionConcurrency);
     var quality = parseResult.GetValue(optionQuality) ?? "best";
     var headerPairs = parseResult.GetValue(optionHeaders);
@@ -81,129 +82,137 @@ rootCommand.SetAction((ParseResult parseResult) =>
     var retryCount = parseResult.GetValue(optionRetryCount);
     var speedLimit = parseResult.GetValue(optionSpeedLimit);
 
-    if (string.IsNullOrEmpty(url))
-    {
-        AnsiConsole.Markup("[bold red]Error: --url is required[/]");
-        return;
-    }
-
-    speedContainer.SpeedLimit = speedLimit;
-
-    var headers = new Dictionary<string, string>();
-    if (headerPairs != null)
-    {
-        foreach (var pair in headerPairs)
+    var jobs = urls
+        .Select((url, index) =>
         {
-            var idx = pair.IndexOf('=');
-            if (idx > 0)
+            var output = index < outputs.Length
+                ? outputs[index]
+                : ExtractFileNameFromUrl(url);
+
+            return (Url: url, Output: output);
+        })
+        .ToList();
+    foreach (var job in jobs)
+    {
+        speedContainer.SpeedLimit = speedLimit;
+
+        var headers = new Dictionary<string, string>();
+        if (headerPairs != null)
+        {
+            foreach (var pair in headerPairs)
             {
-                var key = pair[..idx];
-                var value = pair[(idx + 1)..];
-                headers[key] = value;
+                var idx = pair.IndexOf('=');
+                if (idx > 0)
+                {
+                    var key = pair[..idx];
+                    var value = pair[(idx + 1)..];
+                    headers[key] = value;
+                }
             }
         }
-    }
 
-    var outputDir = Path.GetDirectoryName(Path.GetFullPath(output));
-    if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-    {
-        Directory.CreateDirectory(outputDir);
-    }
-
-    var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    tempDir = Path.Combine(string.IsNullOrEmpty(outputDir) ? "." : outputDir, $".tmp_{timestamp}");
-
-    try
-    {
-        Directory.CreateDirectory(tempDir);
-
-        using var client = CreateHttpClient(headers);
-
-        AnsiConsole.Markup($"[yellow]Fetching m3u8...[/]");
-        var masterContent = FetchM3u8Async(client, url).GetAwaiter().GetResult();
-        var streams = ParseMasterM3u8(masterContent, url);
-
-        string targetUrl;
-        M3u8Info? m3u8Info = null;
-
-        if (streams.Count > 0)
+        var outputDir = Path.GetDirectoryName(Path.GetFullPath(job.Output));
+        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
         {
-            var videoStreams = streams.Where(s => IsVideoStream(s.Codecs)).ToList();
-            var displayStreams = videoStreams.Count > 0 ? videoStreams : streams;
-            AnsiConsole.Markup($"[green]Found {streams.Count} quality options, {displayStreams.Count} video streams[/]");
-            foreach (var s in streams)
-            {
-                var isVideo = IsVideoStream(s.Codecs);
-                var qualityLabel = GetQualityLabel(s.Resolution, s.Bandwidth);
-                var videoTag = isVideo ? "" : " [dim](audio only)[/]";
-                AnsiConsole.Markup($"  - {qualityLabel} ({FormatBandwidth(s.Bandwidth)}){videoTag}");
-            }
-            targetUrl = SelectStreamUrl(streams, quality, url);
-            AnsiConsole.Markup($"[cyan]Using: {targetUrl}[/]\n");
-
-            var m3u8Content = FetchM3u8Async(client, targetUrl).GetAwaiter().GetResult();
-            m3u8Info = ParseM3u8(m3u8Content, targetUrl);
-        }
-        else
-        {
-            targetUrl = url;
-            m3u8Info = ParseM3u8(masterContent, url);
+            Directory.CreateDirectory(outputDir);
         }
 
-        AnsiConsole.Markup($"[green]Found {m3u8Info.Segments.Count} segments[/]");
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        tempDir = Path.Combine(string.IsNullOrEmpty(outputDir) ? "." : outputDir, $".tmp_{timestamp}");
 
-        if (m3u8Info.KeyInfo != null)
+        try
         {
-            AnsiConsole.Markup($"[yellow]Encryption: {m3u8Info.KeyInfo.Method}[/]");
-            if (m3u8Info.KeyInfo.Method == "AES-128")
+            Directory.CreateDirectory(tempDir);
+
+            using var client = CreateHttpClient(headers);
+
+            AnsiConsole.Markup($"[yellow]Fetching m3u8...[/]");
+            var masterContent = FetchM3u8Async(client, job.Url).GetAwaiter().GetResult();
+            var streams = ParseMasterM3u8(masterContent, job.Url);
+
+            string targetUrl;
+            M3u8Info? m3u8Info = null;
+
+            if (streams.Count > 0)
             {
-                var aesKey = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
-                AnsiConsole.Markup("[green]AES-128 key fetched successfully[/]");
-                DownloadSegmentsAsync(client, m3u8Info, tempDir, aesKey, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
-            }
-            else if (m3u8Info.KeyInfo.Method == "AES-128-ECB")
-            {
-                var aesKey = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
-                AnsiConsole.Markup("[green]AES-128 ECB key fetched successfully[/]");
-                DownloadSegmentsAsync(client, m3u8Info, tempDir, aesKey, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
-            }
-            else if (m3u8Info.KeyInfo.Method == "SAMPLE-AES")
-            {
-                throw new NotSupportedException("SAMPLE-AES (FairPlay) encryption requires license server.");
-            }
-            else if (m3u8Info.KeyInfo.Method == "CHACHA20")
-            {
-                var key = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
-                AnsiConsole.Markup("[green]CHACHA20 key fetched successfully[/]");
-                DownloadSegmentsAsync(client, m3u8Info, tempDir, key, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
+                var videoStreams = streams.Where(s => IsVideoStream(s.Codecs)).ToList();
+                var displayStreams = videoStreams.Count > 0 ? videoStreams : streams;
+                AnsiConsole.Markup($"[green]Found {streams.Count} quality options, {displayStreams.Count} video streams[/]");
+                foreach (var s in streams)
+                {
+                    var isVideo = IsVideoStream(s.Codecs);
+                    var qualityLabel = GetQualityLabel(s.Resolution, s.Bandwidth);
+                    var videoTag = isVideo ? "" : " [dim](audio only)[/]";
+                    AnsiConsole.Markup($"  - {qualityLabel} ({FormatBandwidth(s.Bandwidth)}){videoTag}");
+                }
+                targetUrl = SelectStreamUrl(streams, quality, job.Url);
+                AnsiConsole.Markup($"[cyan]Using: {targetUrl}[/]\n");
+
+                var m3u8Content = FetchM3u8Async(client, targetUrl).GetAwaiter().GetResult();
+                m3u8Info = ParseM3u8(m3u8Content, targetUrl);
             }
             else
             {
-                throw new NotSupportedException($"Encryption method '{m3u8Info.KeyInfo.Method}' is not supported.");
+                targetUrl = job.Url;
+                m3u8Info = ParseM3u8(masterContent, job.Url);
+            }
+
+            AnsiConsole.Markup($"[green]Found {m3u8Info.Segments.Count} segments[/]");
+
+            if (m3u8Info.KeyInfo != null)
+            {
+                AnsiConsole.Markup($"[yellow]Encryption: {m3u8Info.KeyInfo.Method}[/]");
+                if (m3u8Info.KeyInfo.Method == "AES-128")
+                {
+                    var aesKey = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
+                    AnsiConsole.Markup("[green]AES-128 key fetched successfully[/]");
+                    DownloadSegmentsAsync(client, m3u8Info, tempDir, aesKey, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
+                }
+                else if (m3u8Info.KeyInfo.Method == "AES-128-ECB")
+                {
+                    var aesKey = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
+                    AnsiConsole.Markup("[green]AES-128 ECB key fetched successfully[/]");
+                    DownloadSegmentsAsync(client, m3u8Info, tempDir, aesKey, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
+                }
+                else if (m3u8Info.KeyInfo.Method == "SAMPLE-AES")
+                {
+                    throw new NotSupportedException("SAMPLE-AES (FairPlay) encryption requires license server.");
+                }
+                else if (m3u8Info.KeyInfo.Method == "CHACHA20")
+                {
+                    var key = FetchAesKeyAsync(client, m3u8Info.KeyInfo).GetAwaiter().GetResult();
+                    AnsiConsole.Markup("[green]CHACHA20 key fetched successfully[/]");
+                    DownloadSegmentsAsync(client, m3u8Info, tempDir, key, m3u8Info.KeyInfo.Method, retryCount, concurrency).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    throw new NotSupportedException($"Encryption method '{m3u8Info.KeyInfo.Method}' is not supported.");
+                }
+            }
+            else
+            {
+                DownloadSegmentsAsync(client, m3u8Info, tempDir, null, null, retryCount, concurrency).GetAwaiter().GetResult();
+            }
+
+            WriteConcatListAsync(m3u8Info, tempDir).GetAwaiter().GetResult();
+            MergeWithFFmpegAsync(tempDir, job.Output, ffmpegPath).GetAwaiter().GetResult();
+
+            AnsiConsole.Markup($"[bold green]Done: {job.Output}[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.Markup($"[bold red]Error: {ex.Message}[/]");
+            throw;
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, true);
             }
         }
-        else
-        {
-            DownloadSegmentsAsync(client, m3u8Info, tempDir, null, null, retryCount, concurrency).GetAwaiter().GetResult();
-        }
+    }
 
-        WriteConcatListAsync(m3u8Info, tempDir).GetAwaiter().GetResult();
-        MergeWithFFmpegAsync(tempDir, output, ffmpegPath).GetAwaiter().GetResult();
-
-        AnsiConsole.Markup($"[bold green]Done: {output}[/]");
-    }
-    catch (Exception ex)
-    {
-        AnsiConsole.Markup($"[bold red]Error: {ex.Message}[/]");
-        throw;
-    }
-    finally
-    {
-        if (Directory.Exists(tempDir))
-        {
-            Directory.Delete(tempDir, true);
-        }
-    }
 });
 
 rootCommand.Parse(args).Invoke();
