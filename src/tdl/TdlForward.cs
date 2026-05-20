@@ -37,7 +37,7 @@ async Task Main(TdClient client, string[] args)
     var optionSource = new Option<string?>("--source") { Required = false, Description = "源频道/群聊链接或用户名 (默认: 收藏夹)" };
     var optionTarget = new Option<string?>("--target") { Required = false, Description = "目标频道/群聊链接或用户名 (默认: 收藏夹)" };
     var optionLimit = new Option<int>("--limit") { DefaultValueFactory = _ => 0, Description = "最大处理数量, 0=全部" };
-    var optionComments = new Option<bool>("--comments") { DefaultValueFactory = _ => false, Description = "是否转发评论" };
+    var optionComments = new Option<bool>("--comments") { DefaultValueFactory = _ => true, Description = "是否转发评论" };
 
     var rootCommand = new RootCommand("将浅转发消息转换为深度Copy");
     rootCommand.Options.Add(optionSource);

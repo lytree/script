@@ -38,7 +38,7 @@ async Task Main(TdClient client, string[] args)
 
     // 解析命令行参数
     var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Path.EntryPointFileDirectoryPath(), "data") };
-    var optionLink = new Option<string[]>("--link") { Required = true, DefaultValueFactory = (res) => ["https://t.me/fancha103/5153"] };
+    var optionLink = new Option<string[]>("--link") { Required = true, DefaultValueFactory = (res) => [] };
     var optionIncludeComments = new Option<bool>("--include-comments") { DefaultValueFactory = (res) => true };
     var rootCommand = new RootCommand { optionOutput, optionLink, optionIncludeComments };
     var parseResult = rootCommand.Parse(args);
