@@ -2,18 +2,20 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 
 
-namespace Helpers;
+namespace Helper;
 
 
 /// <summary>
 /// 时间工具类
 /// </summary>
-public static partial class Helper
+public static partial class Helpers
 {
     /// <summary>
     /// 时间戳起始日期
@@ -99,32 +101,12 @@ public static partial class Helper
     }
 
     /// <summary>
-    /// 得到当前农历月的起始日和截止日
-    /// </summary>
-    /// <param name="dt"></param>
-    public static DateTimeRange GetCurrentLunarMonth(this DateTime dt)
-    {
-        var calendar = new ChineseCalendar(dt);
-        return new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, calendar.ChineseMonth, 1).Date, new ChineseCalendar(calendar.ChineseYear, calendar.ChineseMonth, calendar.GetChineseMonthDays()).Date.AddSeconds(86399));
-    }
-
-    /// <summary>
     /// 得到当前年的起始日和截止日
     /// </summary>
     /// <param name="dt"></param>
     public static DateTimeRange GetCurrentYear(this DateTime dt)
     {
         return new DateTimeRange(new DateTime(dt.Year, 1, 1), new DateTime(dt.Year, 12, 31, 23, 59, 59));
-    }
-
-    /// <summary>
-    /// 得到当前农历年的起始日和截止日
-    /// </summary>
-    /// <param name="dt"></param>
-    public static DateTimeRange GetCurrentLunarYear(this DateTime dt)
-    {
-        var calendar = new ChineseCalendar(dt);
-        return new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, 1, 1).Date, new ChineseCalendar(calendar.ChineseYear, 12, calendar.GetChineseMonthDays(calendar.ChineseYear, 12)).Date.AddSeconds(86399));
     }
 
     /// <summary>
@@ -144,46 +126,6 @@ public static partial class Helper
     }
 
     /// <summary>
-    /// 得到当前农历季度的起始日和截止日
-    /// </summary>
-    /// <param name="dt"></param>
-    public static DateTimeRange GetCurrentLunarQuarter(this DateTime dt)
-    {
-        var calendar = new ChineseCalendar(dt);
-        return dt.Month switch
-        {
-            >= 1 and <= 3 => new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, 1, 1).Date, new ChineseCalendar(calendar.ChineseYear, 3, calendar.GetChineseMonthDays(calendar.ChineseYear, 3)).Date.AddSeconds(86399)),
-            >= 4 and <= 6 => new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, 4, 1).Date, new ChineseCalendar(calendar.ChineseYear, 6, calendar.GetChineseMonthDays(calendar.ChineseYear, 6)).Date.AddSeconds(86399)),
-            >= 7 and <= 9 => new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, 7, 1).Date, new ChineseCalendar(calendar.ChineseYear, 9, calendar.GetChineseMonthDays(calendar.ChineseYear, 9)).Date.AddSeconds(86399)),
-            >= 10 and <= 12 => new DateTimeRange(new ChineseCalendar(calendar.ChineseYear, 10, 1).Date, new ChineseCalendar(calendar.ChineseYear, 12, calendar.GetChineseMonthDays(calendar.ChineseYear, 12)).Date.AddSeconds(86399)),
-            _ => throw new ArgumentOutOfRangeException()
-        };
-    }
-
-    /// <summary>
-    /// 得到当前农历季度的起始日和截止日
-    /// </summary>
-    /// <param name="dt"></param>
-    public static DateTimeRange GetCurrentSolar(this DateTime dt)
-    {
-        var calendar = new ChineseCalendar(dt);
-        ChineseCalendar[] quarters =
-        {
-            calendar.ChineseTwentyFourPrevDay.ChineseTwentyFourPrevDay.ChineseTwentyFourPrevDay,
-                calendar.ChineseTwentyFourPrevDay.ChineseTwentyFourPrevDay,
-                calendar.ChineseTwentyFourPrevDay,
-                calendar,
-                calendar.ChineseTwentyFourNextDay,
-                calendar.ChineseTwentyFourNextDay.ChineseTwentyFourNextDay,
-                calendar.ChineseTwentyFourNextDay.ChineseTwentyFourNextDay.ChineseTwentyFourNextDay
-        };
-        var solar = quarters.LastOrDefault(c => new[] { "春分", "夏至", "秋分", "冬至" }.Contains(c.ChineseTwentyFourDay));
-        var start = solar.ChineseTwentyFourPrevDay.ChineseTwentyFourPrevDay.ChineseTwentyFourPrevDay;
-        var end = solar.ChineseTwentyFourNextDay.ChineseTwentyFourNextDay.ChineseTwentyFourNextDay;
-        return new DateTimeRange(start.Date, end.Date.AddSeconds(-1));
-    }
-
-    /// <summary>
     /// 得到当前范围的起始日和截止日
     /// </summary>
     /// <param name="dt"></param>
@@ -196,10 +138,7 @@ public static partial class Helper
             DateRangeType.Month => GetCurrentMonth(dt),
             DateRangeType.Quarter => GetCurrentQuarter(dt),
             DateRangeType.Year => GetCurrentYear(dt),
-            DateRangeType.LunarMonth => GetCurrentLunarMonth(dt),
-            DateRangeType.LunarQuarter => GetCurrentLunarQuarter(dt),
-            DateRangeType.Solar => GetCurrentSolar(dt),
-            DateRangeType.LunarYear => GetCurrentLunarYear(dt),
+
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
         };
     }
