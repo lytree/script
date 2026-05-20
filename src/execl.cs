@@ -1,4 +1,4 @@
-#:package EPPlus@8.4.0
+#:package EPPlus@*
 
 using System.Text.Json;
 using System.Text.Json.Serialization;

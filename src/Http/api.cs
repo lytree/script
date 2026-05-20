@@ -1,10 +1,14 @@
-#:package Refit@9.0.2
-#:property JsonSerializerIsReflectionEnabledByDefault=true
-#:property PublishTrimmed=false
-#:property Imports=$(RepoRoot)src/Helpers/Json.cs
-using System.Text.Json;
-using Refit;
+#!/usr/bin/env dotnet
+#:include ../Helper/*.cs
 
+#:package Refit@9.0.2
+#:property EnableDefaultEmbeddedResourceItems=true
+#:property JsonSerializerIsReflectionEnabledByDefault=true
+
+
+using System.Text.Json;
+using Helper;
+using Refit;
 
 
 IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpClient()
@@ -52,7 +56,7 @@ IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpCli
 //     {"trainId","25102910473881669"},
 //     {"startTime",1749085361000L},
 //     {"endTime",1749087053001L},
-//     {"direction",1},
+//     // {"direction",1},
 //      {"fromSta",25},
 //      {"toSta",1},
 //     {"positionId1",new { positionId="0"}},
@@ -72,17 +76,38 @@ IRealTimeControllerApi api = RestService.For<IRealTimeControllerApi>(new HttpCli
 //     {"dataType",9},
 
 // });
-var data = await api.getCorrugationInfo(new()
-{
-    {"lineId",1761706036647L},
-    {"trainId","25102910473881669"},
-    {"startTime",1749085361000L},
-    {"endTime",1749087053001L},
-    {"direction",0},
-});
+// var data = await api.getCorrugationInfo(new()
+// {
+//     {"lineId",1761706036647L},
+//     {"trainId","25102910473881669"},
+//     {"startTime",1749085361000L},
+//     {"endTime",1749087053001L},
+//     {"direction",0},
+// });
 // var data = await api.listCarriageAlarmByTrain(1761706036647L, "25102910473881669");
 
-Console.WriteLine(JsonSerializer.Serialize(data, Helpers.Helper.JsonOptions));
+
+// var data = await api.forecastSurplusLifetime(new()
+// {
+//     {"lineId",1761706036647L},
+//     {"trainId","25102910473881669"},
+// });
+var data = await api.chart(new()
+{
+        {"lineId","1764842365042"},
+        {"trainId","25120512215732549"},
+        {"carriageId","25121909565300773"},
+        {"startTime",1767593104387},
+        {"endTime",1770185104387},
+        {"posLoc",1},
+        {"posClass",1},
+        {"dataType",9},
+        {"tendencyType","2"},
+        {"speedType",1}
+});
+
+
+Console.WriteLine(JsonSerializer.Serialize(data, Helpers.JsonOptions));
 
 public interface IRealTimeControllerApi
 {
@@ -124,6 +149,11 @@ public interface IRealTimeControllerApi
 
     [Post("/tms/v1/data/getCorrugationInfo")]
     Task<dynamic> getCorrugationInfo(Dictionary<string, object> dir);
+    [Post("/tms/v1/data/getCorrugationInfo")]
+    Task<dynamic> chart(Dictionary<string, object> dir);
+
+    [Post("/tms/v1/forecast/forecastSurplusLifetime")]
+    Task<dynamic> forecastSurplusLifetime(Dictionary<string, object> dir);
 }
 
 

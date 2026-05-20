@@ -1,3 +1,7 @@
+
+
+#:include ../Helper/*.cs
+#:include ../Data/*.cs
 #:package MySqlConnector@2.5.0
 #:property JsonSerializerIsReflectionEnabledByDefault=true
 #:property PublishTrimmed=false
@@ -7,23 +11,16 @@
 #:package SixLabors.ImageSharp.Drawing@2.1.7
 #:package ScottPlot@5.1.57
 #:package DotNetty.Buffers@0.7.6
-#:property Imports=../Helper/Json.cs;../Helper/DateTime.cs;../Helper/Images.cs;../Helper/Plot.cs;../Data/Config.cs;../Data/Data.cs;../Data/WaveObject.cs
 
 
 
 
-using System.IO;
-using System.Diagnostics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 using System.Text.RegularExpressions;
-using FreeSql;
-using MySqlConnector;
-using Helper;
 using Data;
+using FreeSql;
+using Helper;
+using SkiaSharp;
 
 IFreeSql config = new FreeSql.FreeSqlBuilder()
    .UseConnectionString(FreeSql.DataType.MySql, "Data Source=10.100.0.108;Port=3306;User ID=root;Password=test;database=qacs2000_config_2010;Charset=utf8;SslMode=none;Max pool size=1;Connection Timeout=10")
@@ -36,7 +33,7 @@ IFreeSql data = new FreeSql.FreeSqlBuilder()
    .Build(); //请务必定义成 Singleton 单例模式
 
 
-
+Console.WriteLine(Helpers.JsonSerialize(SKFontManager.Default.FontFamilies));
 var machines = Data.Config.GetAllMachine(config, 1595557239848L);
 
 
@@ -45,12 +42,12 @@ foreach (var machine in machines)
     var vibpositions = Data.Config.GetAllVibPosition(config, machine.MachineId);
     foreach (var position in vibpositions)
     {
-        createImage(machine, position, new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), 1000, 1800);
+        createImage(machine, position, new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), 1000, 1800);
     }
     var rockpositions = Data.Config.GetAllRockPosition(config, machine.MachineId);
     foreach (var position in rockpositions)
     {
-        createImage(machine, position, new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), new DateTime(2025, 12, 01), new DateTime(2025, 12, 22), 1000, 1800);
+        createImage(machine, position, new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), new DateTime(2026, 1, 29), new DateTime(2026, 2, 6), 1000, 1800);
     }
 }
 
@@ -76,7 +73,7 @@ void createImage(Data.Machine machine, Data.MachinePosition position, DateTime s
         wave_y[i] = wave.Wave[i];
     }
 
-    List<Data.Tendency>? list = Data.Vib.GetVibTendency(data, machine.MachineId, startTime, endTime, position.PositionId).AsEnumerable().ToList<Tendency>();
+    List<Data.Tendency>? list = [.. Data.Vib.GetVibTendency(data, machine.MachineId, startTime, endTime, position.PositionId).AsEnumerable()];
     var x = new List<double>();
     var y = new List<double>();
     foreach (var tendency in list)

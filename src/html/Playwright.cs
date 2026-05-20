@@ -1,7 +1,13 @@
-#:package Microsoft.Playwright@1.57.0
-#:package HtmlAgilityPack@1.12.4
+#!/usr/bin/env dotnet
+#:include ../Helper/*.cs
 
-
+#:package Microsoft.Playwright@*
+#:package HtmlAgilityPack@*
+#:package Dumpify@*
+#:property EnableDefaultEmbeddedResourceItems=true
+#:property JsonSerializerIsReflectionEnabledByDefault=true
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 
 
 // 这等同于在命令行运行: playwright install

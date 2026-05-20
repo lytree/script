@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "dotnet-file-based-apps": {
+      "source": "wshaddix/dotnet-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dotnet-file-based-apps/SKILL.md",
+      "computedHash": "7128746edea4a9886d0f87b62f1425fdeeb4f4d15ed2dba3e811044a7c2b9b45"
+    }
+  }
+}
