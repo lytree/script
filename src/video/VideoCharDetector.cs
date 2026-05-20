@@ -9,6 +9,7 @@
 #:package OpenCvSharp4.Extensions@4.13.0.20260427
 #:package RapidOCRSharpOnnx@1.0.7
 #:package Microsoft.ML.OnnxRuntime@1.26.0
+// #:package Microsoft.ML.OnnxRuntime.Gpu@1.26.0
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -31,8 +32,7 @@ static async Task Main(string[] args)
 
 
     var config = new AppConfig();
-    var targetChars = LoadTargetChars(config.TargetCharsFile);
-    Console.WriteLine($"✅ 加载 {targetChars.Count} 个目标汉字 | 采样率: {config.SampleFps:F1} FPS | 防抖间隔: {config.MinCharacterIntervalSec:F1}s");
+    Console.WriteLine($"✅  采样率: {config.SampleFps:F1} FPS | 防抖间隔: {config.MinCharacterIntervalSec:F1}s");
 
 
     using RapidOCRSharp ocr = new RapidOCRSharp(new ExecutionProviderCPU(new OcrConfig(@"F:\Code\Github\script\models\RapidOCR\onnx\PP-OCRv5\det\ch_PP-OCRv5_det_server.onnx", @"F:\Code\Github\script\models\RapidOCR\onnx\PP-OCRv5\rec\ch_PP-OCRv5_rec_server.onnx", LangRec.CH, OCRVersion.PPOCRV5, @"F:\Code\Github\script\models\RapidOCR\onnx\PP-OCRv5\cls\ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx")));
@@ -54,8 +54,8 @@ static async Task Main(string[] args)
     int globalOffset = 1;
     foreach (var videoPath in videoFiles)
     {
-        if (globalOffset <= 34) { globalOffset++; continue; }
-        _ = await ProcessVideoAsync(videoPath, config, targetChars, ocr, config.OutputCsv, globalOffset);
+        if (globalOffset <= 76) { globalOffset++; continue; }
+        _ = await ProcessVideoAsync(videoPath, config, ocr, config.OutputCsv, globalOffset);
         globalOffset++;
     }
 
@@ -64,7 +64,6 @@ static async Task Main(string[] args)
 static async Task<double> ProcessVideoAsync(
     string videoPath,
     AppConfig config,
-    HashSet<string> targetChars,
     RapidOCRSharp ocr,
     string csvPath,
     int globalOffset)
