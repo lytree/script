@@ -11,7 +11,7 @@ public class TdlUpdateHandler
     private Action _onAuthWaitCode;
     private Action _onAuthWaitPassword;
     private Action _onAuthWaitRegistration;
-    private Action _onAuthWaitOtherDeviceConfirmation;
+    private Action<string> _onAuthWaitOtherDeviceConfirmation;
     private Action _onAuthWaitEmailAddress;
     private Action _onAuthWaitEmailCode;
     private Action _onAuthReady;
@@ -32,7 +32,7 @@ public class TdlUpdateHandler
     public TdlUpdateHandler OnAuthWaitCode(Action handler) { _onAuthWaitCode = handler; return this; }
     public TdlUpdateHandler OnAuthWaitPassword(Action handler) { _onAuthWaitPassword = handler; return this; }
     public TdlUpdateHandler OnAuthWaitRegistration(Action handler) { _onAuthWaitRegistration = handler; return this; }
-    public TdlUpdateHandler OnAuthWaitOtherDeviceConfirmation(Action handler) { _onAuthWaitOtherDeviceConfirmation = handler; return this; }
+    public TdlUpdateHandler OnAuthWaitOtherDeviceConfirmation(Action<string> handler) { _onAuthWaitOtherDeviceConfirmation = handler; return this; }
     public TdlUpdateHandler OnAuthWaitEmailAddress(Action handler) { _onAuthWaitEmailAddress = handler; return this; }
     public TdlUpdateHandler OnAuthWaitEmailCode(Action handler) { _onAuthWaitEmailCode = handler; return this; }
     public TdlUpdateHandler OnAuthReady(Action handler) { _onAuthReady = handler; return this; }
@@ -72,8 +72,8 @@ public class TdlUpdateHandler
                 _readyToAuthenticate.Set();
                 _onAuthWaitRegistration?.Invoke();
                 break;
-            case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitOtherDeviceConfirmation }:
-                _onAuthWaitOtherDeviceConfirmation?.Invoke();
+            case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitOtherDeviceConfirmation state }:
+                _onAuthWaitOtherDeviceConfirmation?.Invoke(state.Link);
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateWaitEmailAddress }:
                 AuthNeeded = true;
