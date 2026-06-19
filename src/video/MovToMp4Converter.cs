@@ -1,20 +1,18 @@
 #!/usr/bin/env dotnet
-#:package System.CommandLine@2.0.5
+#:package System.CommandLine@2.*
 #:package Spectre.Console@*
 #:package Spectre.Console.Ansi@*
-#:package CliWrap@3.6.0
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.CommandLine;
 using Spectre.Console;
-using CliWrap;
-using CliWrap.EventStream;
 
 var pathOption = new Option<string>("--path")
 {
     Description = "Path to .mov file or directory containing .mov files",
-    Required = true
+    DefaultValueFactory = (res) => @"C:\Users\hiyan\Downloads\Telegram Desktop"
 };
 
 var ffmpegPathOption = new Option<string>("--ffmpeg")
@@ -95,32 +93,41 @@ async Task ConvertSingleFile(string ffmpeg, string movFile)
 
     try
     {
-        var cmd = Cli.Wrap(ffmpeg)
-            .WithArguments($"-i \"{movFile}\" -c copy \"{mp4File}\"")
-            .WithValidation(CommandResultValidation.None);
-
-        await foreach (var cmdEvent in cmd.ListenAsync())
+        var psi = new ProcessStartInfo
         {
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    AnsiConsole.WriteLine(stdOut.Text);
-                    break;
-                case StandardErrorCommandEvent stdErr:
-                    AnsiConsole.WriteLine(stdErr.Text);
-                    break;
-            }
-        }
+            FileName = ffmpeg,
+            Arguments = $"-i \"{movFile}\" -c copy \"{mp4File}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
 
-        var result = await cmd.ExecuteAsync();
+        using var process = Process.Start(psi)!;
 
-        if (result.ExitCode == 0)
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+                AnsiConsole.WriteLine(e.Data);
+        };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+                AnsiConsole.WriteLine(e.Data);
+        };
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode == 0)
         {
             AnsiConsole.Markup($"[bold green]Success: {mp4File}[/]");
         }
         else
         {
-            AnsiConsole.Markup($"[bold red]Error: FFmpeg exited with code {result.ExitCode}[/]");
+            AnsiConsole.Markup($"[bold red]Error: FFmpeg exited with code {process.ExitCode}[/]");
         }
     }
     catch (Exception ex)
@@ -131,13 +138,15 @@ async Task ConvertSingleFile(string ffmpeg, string movFile)
 
 string FindFfmpeg()
 {
+    string exeName = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+
     string pathEnv = Environment.GetEnvironmentVariable("PATH");
     if (!string.IsNullOrEmpty(pathEnv))
     {
         string[] paths = pathEnv.Split(Path.PathSeparator);
         foreach (string p in paths)
         {
-            string ffmpegPath = Path.Combine(p, "ffmpeg");
+            string ffmpegPath = Path.Combine(p, exeName);
             if (File.Exists(ffmpegPath))
             {
                 return ffmpegPath;
@@ -146,7 +155,7 @@ string FindFfmpeg()
     }
 
     string currentDir = Directory.GetCurrentDirectory();
-    string ffmpegCurrent = Path.Combine(currentDir, "ffmpeg");
+    string ffmpegCurrent = Path.Combine(currentDir, exeName);
     if (File.Exists(ffmpegCurrent))
     {
         return ffmpegCurrent;
@@ -155,7 +164,7 @@ string FindFfmpeg()
     string parentDir = Directory.GetParent(currentDir)?.FullName;
     if (!string.IsNullOrEmpty(parentDir))
     {
-        string ffmpegParent = Path.Combine(parentDir, "ffmpeg");
+        string ffmpegParent = Path.Combine(parentDir, exeName);
         if (File.Exists(ffmpegParent))
         {
             return ffmpegParent;
