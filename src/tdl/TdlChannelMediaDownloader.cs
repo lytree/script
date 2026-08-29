@@ -27,8 +27,8 @@ using ZLogger;
 ManualResetEventSlim ReadyToAuthenticate = new();
 string tdlRoot = string.Empty;
 DownloadTracker _downloadTracker = new();
-HashSet<int> _downloadedFileIds = new();
-Dictionary<int, long> _fileIdToAlbumId = new();
+HashSet<int> _downloadedFileIds = [];
+Dictionary<int, long> _fileIdToAlbumId = [];
 TdlUpdateHandler _updateHandler;
 IDbContextFactory<DownloadDbContext> _dbFactory = null!;
 
@@ -173,7 +173,7 @@ async Task DownloadAllMediaFromChannel(TdClient client, long chatId, int limit, 
             if (msg.MediaAlbumId != 0)
             {
                 if (!mediaGroups.ContainsKey(msg.MediaAlbumId))
-                    mediaGroups[msg.MediaAlbumId] = new List<TdApi.Message>();
+                    mediaGroups[msg.MediaAlbumId] = [];
 
                 if (!mediaGroups[msg.MediaAlbumId].Any(m => m.Id == msg.Id))
                     mediaGroups[msg.MediaAlbumId].Add(msg);
@@ -391,11 +391,11 @@ using (var client = new TdClient())
 public class DownloadTracker
 {
     private record FileDownloadInfo(long TotalSize, string FileName, long DownloadedSize, double LastSpeed, bool IsCompleted);
-    private Dictionary<int, FileDownloadInfo> _downloads = new();
+    private Dictionary<int, FileDownloadInfo> _downloads = [];
     private object _lock = new();
     private HashSet<int> _completedFiles = [];
     private ProgressContext? _ctx;
-    private Dictionary<int, ProgressTask> _tasks = new();
+    private Dictionary<int, ProgressTask> _tasks = [];
     private bool _running;
 
     public DownloadTracker()

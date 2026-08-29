@@ -375,7 +375,7 @@ List<List<TdApi.Message>> GroupMessagesByAlbum(List<TdApi.Message> messages)
         else
         {
             result.Add(currentGroup);
-            currentGroup = new List<TdApi.Message> { messages[i] };
+            currentGroup = [messages[i]];
             currentAlbumId = messages[i].MediaAlbumId;
         }
     }
@@ -404,14 +404,14 @@ public class ChannelExport
     public string ChatTitle { get; set; }
     public DateTime ExportTime { get; set; }
     public int TotalMessages { get; set; }
-    public List<MessageGroup> Groups { get; set; } = new();
+    public List<MessageGroup> Groups { get; set; } = [];
 }
 
 public class MessageGroup
 {
     public string? MediaAlbumId { get; set; }
     public bool IsGrouped { get; set; }
-    public List<MessageInfo> Messages { get; set; } = new();
+    public List<MessageInfo> Messages { get; set; } = [];
 }
 
 public class MessageInfo
