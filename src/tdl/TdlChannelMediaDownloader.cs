@@ -2,6 +2,8 @@
 
 #:include ../../env.cs
 #:include TdlUpdateHandler.cs
+#:include TdlEnv.cs
+#:include TdlDownloadTracker.cs
 
 #:package TDLib@*
 #:package tdlib.native@*
@@ -24,17 +26,16 @@ using TdLib;
 using TdLib.Bindings;
 using ZLogger;
 
-ManualResetEventSlim ReadyToAuthenticate = new();
 string tdlRoot = string.Empty;
 DownloadTracker _downloadTracker = new();
 HashSet<int> _downloadedFileIds = [];
 Dictionary<int, long> _fileIdToAlbumId = [];
-TdlUpdateHandler _updateHandler;
+TdlEnv _env = null!;
 IDbContextFactory<DownloadDbContext> _dbFactory = null!;
 
 async Task Main(TdClient client, string[] args)
 {
-    var logger = InitializeLogger();
+    var logger = TdlEnv.CreateLogger("tdl-channel-download.log", "tdl-channel-download");
 
     var optionOutput = new Option<string?>("--output") { DefaultValueFactory = (res) => Path.Combine(Path.EntryPointFileDirectoryPath(), "data") };
     var optionLink = new Option<string>("--link") { Description = "频道链接，如 https://t.me/channel_name" };
@@ -47,21 +48,17 @@ async Task Main(TdClient client, string[] args)
     var limit = parseResult.GetValue(optionLimit);
     var delay = parseResult.GetValue(optionDelay);
 
-    InitializeEnvironment(logger);
+    tdlRoot = TdlEnv.InitTdlRoot(logger);
 
-    _updateHandler = new TdlUpdateHandler(ReadyToAuthenticate, logger)
-        .OnConfigureTdlibParameters(ConfigureTdlibParameters)
-        .OnFileUpdate(HandleFileUpdate);
+    _env = new TdlEnv(client, logger, filesDir: outputPath, onFileUpdate: HandleFileUpdate);
+    _env.WaitReady();
 
-    client.UpdateReceived += async (_, update) => { await _updateHandler.ProcessUpdates(client, update, outputPath); };
-    ReadyToAuthenticate.Wait();
-
-    if (_updateHandler.AuthNeeded)
+    if (_env.AuthNeeded)
     {
-        await HandleAuthentication(client, logger);
+        await _env.AuthenticateAsync();
     }
 
-    var currentUser = await GetCurrentUser(client);
+    var currentUser = await _env.GetCurrentUserAsync();
     var fullUserName = $"{currentUser.FirstName} {currentUser.LastName}".Trim();
     logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
 
@@ -88,28 +85,6 @@ async Task Main(TdClient client, string[] args)
 
     AnsiConsole.WriteLine("按 ENTER 键退出应用");
     Console.ReadLine();
-}
-
-ILogger InitializeLogger()
-{
-    var factory = LoggerFactory.Create(logging =>
-    {
-        logging.SetMinimumLevel(LogLevel.Information);
-        logging.AddZLoggerSpectreConsoleAndFile("tdl-channel-download.log");
-    });
-    return factory.CreateLogger("tdl-channel-download");
-}
-
-void InitializeEnvironment(ILogger logger)
-{
-    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    tdlRoot = Path.Combine(userProfile, ".tdl");
-
-    if (!Directory.Exists(tdlRoot))
-    {
-        Directory.CreateDirectory(tdlRoot);
-        logger.ZLogInformation($"创建数据根目录: {tdlRoot}");
-    }
 }
 
 async Task InitDatabase(string outputPath, ILogger logger)
@@ -167,7 +142,7 @@ async Task DownloadAllMediaFromChannel(TdClient client, long chatId, int limit, 
 
         foreach (var msg in messages.Messages_)
         {
-            int fileId = GetFileIdFromMessage(msg);
+            int fileId = TdlMediaHelper.GetFileIdFromMessage(msg);
             if (fileId <= 0) continue;
 
             if (msg.MediaAlbumId != 0)
@@ -232,7 +207,7 @@ async Task DownloadAllMediaFromChannel(TdClient client, long chatId, int limit, 
 
 async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, string outputPath, long albumId, ILogger logger)
 {
-    int fileId = GetFileIdFromMessage(message);
+    int fileId = TdlMediaHelper.GetFileIdFromMessage(message);
     int downloadedCount = 0;
 
     if (fileId > 0 && !_downloadedFileIds.Contains(fileId))
@@ -252,77 +227,7 @@ async Task<int> DownloadMessageMedia(TdClient client, TdApi.Message message, str
     return downloadedCount;
 }
 
-int GetFileIdFromMessage(TdApi.Message message)
-{
-    return message.Content switch
-    {
-        TdApi.MessageContent.MessageDocument d => d.Document.Document_.Id,
-        TdApi.MessageContent.MessageVideo v => v.Video.Video_.Id,
-        TdApi.MessageContent.MessagePhoto p => p.Photo.Sizes.LastOrDefault()?.Photo.Id ?? 0,
-        TdApi.MessageContent.MessageAudio a => a.Audio.Audio_.Id,
-        TdApi.MessageContent.MessageAnimation ani => ani.Animation.Animation_.Id,
-        TdApi.MessageContent.MessageVideoNote vn => vn.VideoNote.Video.Id,
-        TdApi.MessageContent.MessageVoiceNote vce => vce.VoiceNote.Voice.Id,
-        _ => 0
-    };
-}
-
-async Task HandleAuthentication(TdClient client, ILogger logger)
-{
-    try
-    {
-        await client.ExecuteAsync(new TdApi.SetAuthenticationPhoneNumber
-        {
-            PhoneNumber = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User)
-        });
-
-        Console.Write("输入登录验证码: ");
-        var code = Console.ReadLine();
-
-        await client.ExecuteAsync(new TdApi.CheckAuthenticationCode { Code = code });
-
-        if (!_updateHandler.PasswordNeeded) { return; }
-
-        Console.Write("输入密码: ");
-        var password = Console.ReadLine();
-
-        await client.ExecuteAsync(new TdApi.CheckAuthenticationPassword { Password = password });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "认证失败");
-        throw;
-    }
-}
-
-async Task<TdApi.User> GetCurrentUser(TdClient client)
-{
-    return await client.ExecuteAsync(new TdApi.GetMe());
-}
-
-async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger logger)
-{
-    await client.ExecuteAsync(new TdApi.SetTdlibParameters
-    {
-        ApiId = Convert.ToInt32(Environment.GetEnvironmentVariable("tdl_api_id", EnvironmentVariableTarget.User)),
-        ApiHash = Environment.GetEnvironmentVariable("tdl_api_hash", EnvironmentVariableTarget.User),
-        DeviceModel = "PC",
-        SystemLanguageCode = "en",
-        ApplicationVersion = "1.0.0",
-        DatabaseDirectory = Path.Combine(tdlRoot, "db"),
-        FilesDirectory = Path.Combine(outputPath, "files"),
-        UseFileDatabase = true,
-        UseChatInfoDatabase = true,
-        UseMessageDatabase = true,
-    });
-
-    logger.ZLogInformation($"正在尝试连接代理...");
-    var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
-    await client.EnableProxyAsync(proxy.Id);
-    logger.ZLogInformation($"代理已启用。");
-}
-
-async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
+async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
 {
     int fileId = file.Id;
 
@@ -340,45 +245,7 @@ async Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger logger)
     else if (file.Local.IsDownloadingCompleted)
     {
         _downloadTracker.CompleteDownload(fileId, fileId.ToString(), file.Size);
-        OnDownloadFinished(file, outputPath, logger);
-    }
-}
-
-void OnDownloadFinished(TdApi.File file, string outputPath, ILogger logger)
-{
-    string sourcePath = file.Local.Path;
-    if (string.IsNullOrEmpty(sourcePath)) return;
-
-    string fileName = Path.GetFileName(sourcePath);
-
-    string albumSubPath;
-    if (_fileIdToAlbumId.TryGetValue(file.Id, out long albumId) && albumId != 0)
-    {
-        albumSubPath = Path.Combine("Downloads", albumId.ToString());
-    }
-    else
-    {
-        albumSubPath = "Downloads";
-    }
-
-    string targetPath = Path.Combine(outputPath, albumSubPath, fileName);
-
-    try
-    {
-        if (File.Exists(sourcePath))
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
-            File.Move(sourcePath, targetPath, true);
-            logger.ZLogInformation(@$"文件已归档至: {sourcePath}  {targetPath}");
-        }
-        else
-        {
-            logger.ZLogInformation(@$"文件不存在: {sourcePath} ");
-        }
-    }
-    catch (Exception ex)
-    {
-        logger.ZLogError(ex, $"处理下载完成的文件时出错");
+        TdlMediaHelper.OnDownloadFinished(file, _fileIdToAlbumId, outputPath, cbLogger);
     }
 }
 
@@ -386,148 +253,6 @@ using (var client = new TdClient())
 {
     client.Bindings.SetLogVerbosityLevel(TdLogLevel.Fatal);
     await Main(client, args);
-}
-
-public class DownloadTracker
-{
-    private record FileDownloadInfo(long TotalSize, string FileName, long DownloadedSize, double LastSpeed, bool IsCompleted);
-    private Dictionary<int, FileDownloadInfo> _downloads = [];
-    private object _lock = new();
-    private HashSet<int> _completedFiles = [];
-    private ProgressContext? _ctx;
-    private Dictionary<int, ProgressTask> _tasks = [];
-    private bool _running;
-
-    public DownloadTracker()
-    {
-    }
-
-    void EnsureStarted()
-    {
-        if (_ctx != null) return;
-
-        _running = true;
-        var thread = new Thread(() =>
-        {
-            AnsiConsole.Progress()
-                .AutoRefresh(true)
-                .AutoClear(false)
-                .HideCompleted(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new DownloadedColumn(),
-                    new TransferSpeedColumn(),
-                    new RemainingTimeColumn())
-                .Start(ctx =>
-                {
-                    _ctx = ctx;
-                    while (_running)
-                    {
-                        lock (_lock)
-                        {
-                            foreach (var (fileId, info) in _downloads)
-                            {
-                                if (!_tasks.TryGetValue(fileId, out var task))
-                                {
-                                    task = ctx.AddTask($"[cyan]{fileId}[/]");
-                                    task.MaxValue = info.TotalSize > 0 ? info.TotalSize : 1;
-                                    task.Value = info.DownloadedSize;
-                                    task.StartTask();
-                                    _tasks[fileId] = task;
-                                }
-
-                                if (info.IsCompleted)
-                                {
-                                    task.Value = task.MaxValue;
-                                    task.Description = $"[green]✓[/] [cyan]{fileId}[/] [green]下载完成[/] \n";
-                                    task.StopTask();
-                                    AnsiConsole.WriteLine();
-                                }
-                                else
-                                {
-                                    double percent = info.TotalSize > 0 ? (double)info.DownloadedSize / info.TotalSize * 100 : 0;
-                                    string downloadedStr = FormatSize(info.DownloadedSize);
-                                    string totalStr = FormatSize(info.TotalSize);
-                                    string speedStr = info.LastSpeed > 0 ? $"{FormatSize((long)info.LastSpeed)}/s" : "";
-                                    task.MaxValue = info.TotalSize > 0 ? info.TotalSize : 1;
-                                    task.Value = info.DownloadedSize;
-                                    task.Description = $"[cyan]{fileId}[/] [[{percent:F1}%]] {downloadedStr} / {totalStr} {speedStr}";
-                                }
-                            }
-
-                            var completedIds = _downloads.Where(kvp => kvp.Value.IsCompleted).Select(kvp => kvp.Key).ToList();
-                            foreach (var id in completedIds)
-                            {
-                                _downloads.Remove(id);
-                                _completedFiles.Add(id);
-                            }
-                        }
-
-                        Thread.Sleep(100);
-                    }
-                });
-        })
-        { IsBackground = true };
-        thread.Start();
-    }
-
-    public void StartDownload(int fileId, string fileName, long totalSize)
-    {
-        EnsureStarted();
-        lock (_lock)
-        {
-            _downloads[fileId] = new FileDownloadInfo(totalSize, fileName, 0, 0, false);
-        }
-    }
-
-    public void UpdateProgress(int fileId, string fileName, long totalSize, long downloadedSize)
-    {
-        lock (_lock)
-        {
-            if (_downloads.TryGetValue(fileId, out var info))
-            {
-                double speed = 0;
-                if (info.DownloadedSize > 0 && info.DownloadedSize != downloadedSize)
-                {
-                    speed = (downloadedSize - info.DownloadedSize) / 0.1;
-                }
-                _downloads[fileId] = info with { DownloadedSize = downloadedSize, TotalSize = totalSize, LastSpeed = speed };
-            }
-        }
-    }
-
-    public void CompleteDownload(int fileId, string fileName, long totalSize)
-    {
-        lock (_lock)
-        {
-            if (_downloads.TryGetValue(fileId, out var info))
-            {
-                _downloads[fileId] = info with { IsCompleted = true, DownloadedSize = totalSize };
-            }
-        }
-    }
-
-    public int GetCompletedCount()
-    {
-        lock (_lock)
-        {
-            return _completedFiles.Count;
-        }
-    }
-
-    static string FormatSize(long bytes)
-    {
-        string[] units = { "B", "KB", "MB", "GB", "TB" };
-        double size = bytes;
-        int unitIndex = 0;
-        while (size >= 1024 && unitIndex < units.Length - 1)
-        {
-            size /= 1024;
-            unitIndex++;
-        }
-        return $"{size:F2} {units[unitIndex]}";
-    }
 }
 
 public class DownloadedFile

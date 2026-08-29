@@ -60,7 +60,7 @@ async Task Main(TdClient client, string[] args)
     logger.ZLogInformation($"成功登录为 [[{currentUser.Id}]] / [[@{currentUser.Usernames?.ActiveUsernames[0]}]] / [[{fullUserName}]]");
 
     var chats = await ListChatsAsync(client, limit, logger);
-    var filtered = ApplyFilter(chats, filter, logger);
+    var filtered = ApplyFilter(chats, filter);
 
     logger.ZLogInformation($"共 {chats.Count} 个聊天，过滤后 {filtered.Count} 个");
 
@@ -155,7 +155,7 @@ string GetChatType(TdApi.Chat chat)
     };
 }
 
-List<ChatInfo> ApplyFilter(List<ChatInfo> chats, string? filter, ILogger logger)
+List<ChatInfo> ApplyFilter(List<ChatInfo> chats, string? filter)
 {
     if (string.IsNullOrWhiteSpace(filter)) return chats;
 

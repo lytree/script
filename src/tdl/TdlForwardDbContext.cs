@@ -13,17 +13,17 @@ public class ForwardRecord
     public bool IsSuccess { get; set; }
     public DateTime ForwardedAt { get; set; }
     public string? ExtraData { get; set; }
-
     public static string BuildExtraData(TdApi.Message message, string? error = null)
+        => JsonSerializer.Serialize(message, SerializerOptions);
+
+    static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        return JsonSerializer.Serialize(message, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNameCaseInsensitive = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
-    }
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
 }
 
 public class ForwardDbContext : DbContext

@@ -202,7 +202,7 @@ public class TdlForwardService
             }
             catch (TdException ex) when (ex.Error.Code == 429)
             {
-                int retryAfter = ParseRetryAfter(ex);
+                int retryAfter = TdlEnv.ParseRetryAfter(ex);
                 _logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
                 await Task.Delay(retryAfter * 1000);
             }
@@ -219,149 +219,6 @@ public class TdlForwardService
             totalForwarded += forwarded;
             totalSkipped += skipped;
         }
-
-        if (totalSkipped > 0)
-        {
-            _logger.ZLogInformation($"跳过已转发消息 {totalSkipped} 条");
-        }
-
-        return totalForwarded;
-    }
-    public async Task<int> ForwardOlderDirection(ForwardDbContext db, long sourceChatId, long startMessageId, long targetChatId, int limit, bool forwardComments)
-    {
-        int totalForwarded = 0;
-        int totalSkipped = 0;
-        long fromMessageId = startMessageId;
-        List<TdApi.Message>? pendingGroup = null;
-        bool hasMore = true;
-
-        _logger.ZLogInformation($"开始向旧消息方向转发...");
-
-        while (hasMore)
-        {
-            try
-            {
-                var history = await _client.GetChatHistoryAsync(sourceChatId, fromMessageId, 0, 100, false);
-                if (history.Messages_ == null || history.Messages_.Length == 0)
-                {
-                    hasMore = false;
-                    break;
-                }
-
-                var messages = history.Messages_
-                    .Where(m => m.Id <= fromMessageId)
-                    .OrderBy(m => m.Id)
-                    .ToList();
-
-                if (messages.Count == 0)
-                {
-                    fromMessageId = history.Messages_.Last().Id;
-                    continue;
-                }
-
-                if (pendingGroup != null && pendingGroup.Count > 0)
-                {
-                    messages = [.. pendingGroup, .. messages];
-                    pendingGroup = null;
-                }
-
-                var (toProcess, pending) = ExtractPendingMediaGroup(messages);
-                if (pending != null && pending.Count > 0)
-                {
-                    pendingGroup = pending;
-                }
-
-                var (forwarded, skipped) = await ForwardGroupedMessages(db, toProcess, sourceChatId, targetChatId, forwardComments);
-                totalForwarded += forwarded;
-                totalSkipped += skipped;
-
-                if (limit > 0 && totalForwarded >= limit)
-                {
-                    _logger.ZLogInformation($"已达到转发限制 {limit}");
-                    break;
-                }
-
-                fromMessageId = history.Messages_.Last().Id;
-                await Task.Delay(1000);
-            }
-            catch (TdException ex) when (ex.Error.Code == 429)
-            {
-                int retryAfter = ParseRetryAfter(ex);
-                _logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
-                await Task.Delay(retryAfter * 1000);
-            }
-            catch (Exception ex)
-            {
-                _logger.ZLogError(ex, $"转发过程中发生异常");
-                await Task.Delay(5000);
-            }
-        }
-
-        if (pendingGroup != null && pendingGroup.Count > 0)
-        {
-            var (forwarded, skipped) = await ForwardGroupedMessages(db, pendingGroup, sourceChatId, targetChatId, forwardComments);
-            totalForwarded += forwarded;
-            totalSkipped += skipped;
-        }
-
-        if (totalSkipped > 0)
-        {
-            _logger.ZLogInformation($"跳过已转发消息 {totalSkipped} 条");
-        }
-
-        return totalForwarded;
-    }
-
-    public async Task<int> ForwardNewerDirection(ForwardDbContext db, long sourceChatId, long startMessageId, long targetChatId, int limit, bool forwardComments)
-    {
-        var newerMessages = new List<TdApi.Message>();
-        long fromMessageId = 0;
-        bool foundStart = false;
-
-        _logger.ZLogInformation($"开始向新消息方向转发（从最新消息往回搜索）...");
-
-        while (!foundStart)
-        {
-            try
-            {
-                var history = await _client.GetChatHistoryAsync(sourceChatId, fromMessageId, 0, 100, false);
-                if (history.Messages_ == null || history.Messages_.Length == 0)
-                {
-                    break;
-                }
-
-                foreach (var msg in history.Messages_)
-                {
-                    if (msg.Id >= startMessageId)
-                    {
-                        newerMessages.Add(msg);
-                        if (limit > 0 && newerMessages.Count >= limit)
-                        {
-                            foundStart = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        foundStart = true;
-                        break;
-                    }
-                }
-
-                fromMessageId = history.Messages_.Last().Id;
-                await Task.Delay(500);
-            }
-            catch (Exception ex)
-            {
-                _logger.ZLogError(ex, $"搜索新消息时发生异常");
-                break;
-            }
-        }
-
-        newerMessages = newerMessages.OrderBy(m => m.Id).ToList();
-        _logger.ZLogInformation($"找到 {newerMessages.Count} 条消息，开始转发...");
-
-        var (totalForwarded, totalSkipped) = await ForwardGroupedMessages(db, newerMessages, sourceChatId, targetChatId, forwardComments);
 
         if (totalSkipped > 0)
         {
@@ -387,10 +244,10 @@ public class TdlForwardService
             UseMessageDatabase = true,
         });
 
-        cbLogger.ZLogInformation($"正在尝试连接代理...");
-        var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
+        var (proxyHost, proxyPort) = TdlEnv.GetProxyConfig();
+        cbLogger.ZLogInformation($"正在尝试连接代理 {proxyHost}:{proxyPort}...");
+        var proxy = await client.AddProxyAsync(new TdApi.Proxy() { Server = proxyHost, Port = proxyPort, Type = new TdApi.ProxyType.ProxyTypeSocks5() }, true);
         await client.EnableProxyAsync(proxy.Id);
-        cbLogger.ZLogInformation($"代理已启用。");
     }
 
     Task HandleFileUpdate(TdApi.File file, string outputPath, ILogger cbLogger)
@@ -553,7 +410,7 @@ public class TdlForwardService
                     {
                         if (sendError.Code == 429 || (sendError.Message?.Contains("Too Many Requests") ?? false))
                         {
-                            int retryAfter = ParseRetryAfterFromError(sendError);
+                            int retryAfter = TdlEnv.ParseRetryAfter(sendError);
                             retryCount++;
                             _logger.ZLogWarning($"异步发送触发频率限制 (第{retryCount}次)，等待 {retryAfter} 秒后重试...");
                             await Task.Delay(retryAfter * 1000);
@@ -584,7 +441,7 @@ public class TdlForwardService
                 }
                 catch (TdException ex) when (ex.Error.Code == 429)
                 {
-                    int retryAfter = ParseRetryAfter(ex);
+                    int retryAfter = TdlEnv.ParseRetryAfter(ex);
                     retryCount++;
                     _logger.ZLogWarning($"触发频率限制 (第{retryCount}次)，等待 {retryAfter} 秒后重试...");
                     await Task.Delay(retryAfter * 1000);
@@ -697,7 +554,7 @@ public class TdlForwardService
                     {
                         if (sendError.Code == 429 || (sendError.Message?.Contains("Too Many Requests") ?? false))
                         {
-                            int retryAfter = ParseRetryAfterFromError(sendError);
+                            int retryAfter = TdlEnv.ParseRetryAfter(sendError);
                             retryCount++;
                             _logger.ZLogWarning($"异步发送触发频率限制 (第{retryCount}次)，等待 {retryAfter} 秒后重试...");
                             await Task.Delay(retryAfter * 1000);
@@ -773,33 +630,6 @@ public class TdlForwardService
         await db.SaveChangesAsync();
     }
 
-    int ParseRetryAfter(TdException ex)
-    {
-        if (ex.Error?.Message != null)
-        {
-            return ParseRetryAfterFromMessage(ex.Error.Message);
-        }
-        return 15;
-    }
-
-    int ParseRetryAfterFromError(TdApi.Error error)
-    {
-        if (error?.Message != null)
-        {
-            return ParseRetryAfterFromMessage(error.Message);
-        }
-        return 15;
-    }
-
-    int ParseRetryAfterFromMessage(string message)
-    {
-        var match = Regex.Match(message, @"(\d+)");
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int seconds) && seconds > 0)
-        {
-            return Math.Min(seconds + 2, 300);
-        }
-        return 15;
-    }
 
     List<List<TdApi.Message>> GroupMessagesByAlbum(List<TdApi.Message> messages)
     {
