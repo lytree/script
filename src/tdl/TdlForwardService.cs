@@ -12,7 +12,7 @@ public class TdlForwardService
     readonly string _tdlRoot;
     readonly TdlUpdateHandler _updateHandler;
     readonly ManualResetEventSlim _readyToAuthenticate;
-    readonly Dictionary<long, TaskCompletionSource<TdApi.Error>> _pendingSends = new();
+    readonly Dictionary<long, TaskCompletionSource<TdApi.Error>> _pendingSends = [];
     readonly object _pendingLock = new();
 
     public bool AuthNeeded => _updateHandler.AuthNeeded;

@@ -54,7 +54,7 @@ static async Task Main(string[] args)
     int globalOffset = 1;
     foreach (var videoPath in videoFiles)
     {
-        if (globalOffset <= 76) { globalOffset++; continue; }
+        if (globalOffset <= 86) { globalOffset++; continue; }
         _ = await ProcessVideoAsync(videoPath, config, ocr, config.OutputCsv, globalOffset);
         globalOffset++;
     }
@@ -77,7 +77,7 @@ static async Task<double> ProcessVideoAsync(
     int totalFrames = (int)cap.FrameCount;
     int skipFrames = Math.Max(1, (int)(fps / config.SampleFps));
 
-    HashSet<string> seen = new();
+    HashSet<string> seen = [];
     double skipUntil = 0;
 
     using var frame = new Mat();

@@ -53,7 +53,7 @@ using (ExcelPackage excelPackage = new(file))
         // 确保分组存在
         if (!result.ContainsKey(groupName))
         {
-            result[groupName] = new Dictionary<string, string>();
+            result[groupName] = [];
         }
 
         // 添加键值对（重复键会自动覆盖）

@@ -26,8 +26,8 @@ using ZLogger;
 ManualResetEventSlim ReadyToAuthenticate = new();
 string tdlRoot = string.Empty;
 DownloadTracker _downloadTracker = new();
-HashSet<int> _downloadedFileIds = new HashSet<int>();
-Dictionary<int, long> _fileIdToAlbumId = new Dictionary<int, long>();
+HashSet<int> _downloadedFileIds = [];
+Dictionary<int, long> _fileIdToAlbumId = [];
 TdlUpdateHandler _updateHandler;
 
 // 主函数
@@ -497,11 +497,11 @@ using (var client = new TdClient())
 public class DownloadTracker
 {
     private record FileDownloadInfo(long TotalSize, string FileName, long DownloadedSize, double LastSpeed, bool IsCompleted);
-    private Dictionary<int, FileDownloadInfo> _downloads = new();
+    private Dictionary<int, FileDownloadInfo> _downloads = [];
     private object _lock = new();
     private HashSet<int> _completedFiles = [];
     private ProgressContext? _ctx;
-    private Dictionary<int, ProgressTask> _tasks = new();
+    private Dictionary<int, ProgressTask> _tasks = [];
     private bool _running;
 
     public DownloadTracker()

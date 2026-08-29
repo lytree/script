@@ -224,7 +224,7 @@ public class TdlUpdateHandler
                 logger.ZLogTrace($"消息删除: ChatId={udm.ChatId}, 数量={udm.MessageIds.Length}");
                 if (_onMessageUpdate != null) await _onMessageUpdate(udm, logger);
                 break;
-            case TdApi.Update.UpdatePendingTextMessage uptm:
+            case TdApi.Update.UpdatePendingMessage uptm:
                 logger.ZLogTrace($"待发送文本消息更新: ChatId={uptm.ChatId}");
                 break;
             #endregion
@@ -737,13 +737,13 @@ public class TdlUpdateHandler
             case TdApi.Update.UpdateOwnedStarCount uosc:
                 logger.ZLogTrace($"拥有的Star数量更新");
                 break;
-            case TdApi.Update.UpdateOwnedTonCount uotc:
+            case TdApi.Update.UpdateOwnedGramCount uotc:
                 logger.ZLogTrace($"拥有的TON数量更新");
                 break;
             case TdApi.Update.UpdateStarRevenueStatus usrs:
                 logger.ZLogTrace($"Star收入状态更新");
                 break;
-            case TdApi.Update.UpdateTonRevenueStatus utrs:
+            case TdApi.Update.UpdateGramRevenueStatus utgs:
                 logger.ZLogTrace($"TON收入状态更新");
                 break;
             #endregion
