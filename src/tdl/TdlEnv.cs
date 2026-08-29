@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Spectre.Console;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
 using TdLib;
@@ -127,7 +128,7 @@ public class TdlEnv
         if (string.IsNullOrWhiteSpace(botToken))
         {
             Console.Write("输入 Bot Token: ");
-            botToken = Console.ReadLine();
+            botToken = ReadPassword();
         }
 
         _logger.ZLogInformation($"正在使用 Bot Token 登录...");
@@ -340,17 +341,42 @@ public class TdlEnv
     /// <summary>
     /// 从 TdException 中解析 "Too Many Requests" 的重试等待秒数。
     /// </summary>
-    public static int ParseRetryAfter(TdException ex)
+    public static int ParseRetryAfter(TdException ex) => ParseRetryFromMessage(ex.Error?.Message);
+
+    /// <summary>
+    /// 从 TdApi.Error 中解析 "Too Many Requests" 的重试等待秒数。
+    /// </summary>
+    public static int ParseRetryAfter(TdApi.Error error) => ParseRetryFromMessage(error?.Message);
+
+    static int ParseRetryFromMessage(string? message)
     {
-        if (ex.Error?.Message != null)
+        if (message != null)
         {
-            var match = Regex.Match(ex.Error.Message, @"(\d+)");
+            var match = Regex.Match(message, @"(\d+)");
             if (match.Success && int.TryParse(match.Groups[1].Value, out int seconds) && seconds > 0)
             {
                 return Math.Min(seconds + 2, 300);
             }
         }
         return 15;
+    }
+
+    /// <summary>
+    /// 读取代理配置 (env tdl_proxy, 格式 host:port, 默认 127.0.0.1:7897)。
+    /// </summary>
+    public static (string Host, int Port) GetProxyConfig()
+    {
+        var raw = Environment.GetEnvironmentVariable("tdl_proxy", EnvironmentVariableTarget.User);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return ("127.0.0.1", 7897);
+        }
+        var idx = raw.LastIndexOf(':');
+        if (idx < 0 || !int.TryParse(raw[(idx + 1)..], out var port))
+        {
+            return ("127.0.0.1", 7897);
+        }
+        return (raw[..idx], port);
     }
 
     // ──────────────────────────────────────────────
@@ -396,18 +422,17 @@ public class TdlEnv
     /// </summary>
     static void PrintQrCode(string data)
     {
-        Console.WriteLine("┌──────────────────────────────────┐");
-        Console.WriteLine("│  请在手机 Telegram 扫描或输入链接  │");
-        Console.WriteLine("└──────────────────────────────────┘");
-        Console.WriteLine();
-        Console.WriteLine($"  {data}");
-        Console.WriteLine();
-        Console.WriteLine("  操作步骤:");
-        Console.WriteLine("  1. 打开手机 Telegram");
-        Console.WriteLine("  2. 设置 -> 设备 -> 扫描二维码");
-        Console.WriteLine("  3. 扫描上方链接或手动输入");
-    }
+        AnsiConsole.MarkupLine("[cyan]┌──────────────────────────────────┐[/]");
+        AnsiConsole.MarkupLine("[cyan]│[/]  [yellow]请在手机 Telegram 扫描或输入链接[/]  [cyan]│[/]");
+        AnsiConsole.MarkupLine("[cyan]└──────────────────────────────────┘[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"  [green]{data}[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("  [grey]操作步骤:[/]");
+        AnsiConsole.MarkupLine("  [grey]1. 打开手机 Telegram[/]");
+        AnsiConsole.MarkupLine("  [grey]2. 设置 -> 设备 -> 扫描二维码[/]");
 
+    }
     async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
     {
         await client.ExecuteAsync(new TdApi.SetTdlibParameters
@@ -424,9 +449,10 @@ public class TdlEnv
             UseMessageDatabase = true,
         });
 
-        cbLogger.ZLogInformation($"正在尝试连接代理...");
+        var (proxyHost, proxyPort) = GetProxyConfig();
+        cbLogger.ZLogInformation($"正在尝试连接代理 {proxyHost}:{proxyPort}...");
         var proxy = await client.AddProxyAsync(
-            new TdApi.Proxy { Server = "127.0.0.1", Port = 7897, Type = new TdApi.ProxyType.ProxyTypeSocks5() },
+            new TdApi.Proxy { Server = proxyHost, Port = proxyPort, Type = new TdApi.ProxyType.ProxyTypeSocks5() },
             true);
         await client.EnableProxyAsync(proxy.Id);
         cbLogger.ZLogInformation($"代理已启用。");
