@@ -23,7 +23,7 @@ param(
 )
 
 $repo  = "F:\Code\Github\script"
-$btsou = Join-Path $repo "src\btsou.cs"
+$btsou = Join-Path $repo "src\search\btsou.cs"
 
 Set-Location $repo
 
