@@ -5,6 +5,7 @@
 #:include TdlEnv.cs
 
 #:package TDLib@*
+#:package tdlib.api@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
 #:package System.CommandLine@*
@@ -88,7 +89,7 @@ async Task<List<ChatInfo>> ListChatsAsync(TdClient client, int limit, ILogger lo
     var result = new List<ChatInfo>();
     logger.ZLogInformation($"正在获取聊天列表...");
 
-    var chatList = await client.GetChatsAsync(limit: limit);
+    var chatList = await client.GetChatsAsync(new TdApi.ChatList.ChatListMain(), limit: limit);
     if (chatList?.ChatIds == null) return result;
 
     foreach (var chatId in chatList.ChatIds)
@@ -103,32 +104,41 @@ async Task<List<ChatInfo>> ListChatsAsync(TdClient client, int limit, ILogger lo
                 Type = GetChatType(chat),
                 UnreadCount = chat.UnreadCount,
                 LastMessageDate = chat.LastMessage?.Date ?? 0,
-                IsVerified = chat.IsVerified,
+                IsVerified = false,
                 HasProtectedContent = chat.HasProtectedContent,
                 MemberCount = 0
             };
 
+            // 新版 TDLib: Chat 不再有 Usernames/IsVerified 字段,改从对应 Supergroup/User 上取
             try
             {
-                var info2 = await client.GetChatInfoAsync(chatId);
-                if (info2 is TdLib.Bindings.TdApi.ChatInfo.ChatInfoPrivate priv)
+                switch (chat.Type)
                 {
-                    info.MemberCount = 0;
-                }
-                else if (info2 is TdLib.Bindings.TdApi.ChatInfo.ChatInfoBasicGroup bg)
-                {
-                    info.MemberCount = bg.BasicGroup?.MemberCount ?? 0;
-                }
-                else if (info2 is TdLib.Bindings.TdApi.ChatInfo.ChatInfoSupergroup sg)
-                {
-                    info.MemberCount = sg.Supergroup?.MemberCount ?? 0;
+                    case TdApi.ChatType.ChatTypeSupergroup sg:
+                    {
+                        var supergroup = await client.GetSupergroupAsync(sg.SupergroupId);
+                        if (supergroup?.Usernames?.ActiveUsernames is { Length: > 0 } sgUsernames)
+                            info.Username = sgUsernames[0];
+                        info.MemberCount = supergroup?.MemberCount ?? 0;
+                        info.IsVerified = supergroup?.VerificationStatus?.IsVerified == true;
+                        break;
+                    }
+                    case TdApi.ChatType.ChatTypeBasicGroup bg:
+                    {
+                        var basicGroup = await client.GetBasicGroupAsync(bg.BasicGroupId);
+                        info.MemberCount = basicGroup?.MemberCount ?? 0;
+                        break;
+                    }
+                    case TdApi.ChatType.ChatTypePrivate:
+                    {
+                        // 私聊不取成员数
+                        break;
+                    }
                 }
             }
-            catch { }
-
-            if (!string.IsNullOrEmpty(chat.Usernames?.ActiveUsernames?[0]))
+            catch (TdException ex)
             {
-                info.Username = chat.Usernames.ActiveUsernames[0];
+                logger.ZLogDebug($"聊天 {chatId} 扩展信息获取失败: {ex.Error.Message}");
             }
 
             result.Add(info);

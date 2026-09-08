@@ -5,6 +5,7 @@
 #:include TdlEnv.cs
 
 #:package TDLib@*
+#:package tdlib.api@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
 #:package System.CommandLine@*
@@ -77,7 +78,14 @@ async Task Main(TdClient client, string[] args)
         outputPath = "tdl-users.json";
     }
 
-    var members = await ExportChatMembersAsync(client, chatId, limit, raw, logger);
+    // 新版 TDLib: Supergroup/Channel 才能用 GetSupergroupMembersAsync 拉成员
+    if (chat.Type is not TdApi.ChatType.ChatTypeSupergroup sg)
+    {
+        logger.ZLogError($"聊天类型 {chat.Type.GetType().Name} 不支持导出成员,需要 Supergroup/Channel。");
+        return;
+    }
+
+    var members = await ExportChatMembersAsync(client, sg.SupergroupId, limit, raw, logger);
 
     var jsonOptions = new JsonSerializerOptions
     {
@@ -102,63 +110,67 @@ async Task Main(TdClient client, string[] args)
     Console.ReadLine();
 }
 
-async Task<List<MemberInfo>> ExportChatMembersAsync(TdClient client, long chatId, int limit, bool raw, ILogger logger)
+async Task<List<MemberInfo>> ExportChatMembersAsync(TdClient client, long supergroupId, int limit, bool raw, ILogger logger)
 {
     var result = new List<MemberInfo>();
-    long offset = 0;
     int batchSize = 200;
-    bool hasMore = true;
 
     logger.ZLogInformation($"开始导出聊天成员...");
 
+    // 1) 管理员列表 — 新版 TDLib 改用 GetSupergroupMembersAsync + SupergroupMembersFilter.Administrators
+    try
+    {
+        var admins = await client.GetSupergroupMembersAsync(
+            supergroupId: supergroupId,
+            filter: new TdApi.SupergroupMembersFilter.SupergroupMembersFilterAdministrators(),
+            offset: 0,
+            limit: batchSize);
+        if (admins?.Members is { Length: > 0 })
+        {
+            logger.ZLogInformation($"管理员数量: {admins.TotalCount}");
+            foreach (var member in admins.Members)
+            {
+                if (limit > 0 && result.Count >= limit) break;
+                var info = await BuildMemberInfo(client, member, raw, logger);
+                if (info != null) result.Add(info);
+            }
+        }
+    }
+    catch (TdException ex)
+    {
+        logger.ZLogWarning($"获取管理员失败: {ex.Error.Message}");
+    }
+
+    // 2) 普通成员 — SearchChatMembersAsync 返回 ChatMembers(成员数组,不是 ID 数组)
+    int offset = 0;
+    bool hasMore = true;
     while (hasMore)
     {
         try
         {
-            TdApi.ChatMembers members;
-            try
-            {
-                members = await client.GetChatAdministratorsAsync(chatId);
-                if (offset == 0 && members.TotalCount > 0)
-                {
-                    logger.ZLogInformation($"管理员数量: {members.TotalCount}");
-                }
-            }
-            catch
-            {
-                members = new TdApi.ChatMembers { TotalCount = 0, Members = Array.Empty<TdApi.ChatMember>() };
-            }
-
-            if (offset == 0)
-            {
-                foreach (var member in members.Members ?? Array.Empty<TdApi.ChatMember>())
-                {
-                    var info = await BuildMemberInfo(client, member, raw, logger);
-                    if (info != null) result.Add(info);
-                }
-            }
-
-            var chatMemberIds = await client.SearchChatMembersAsync(
-                chatId: chatId,
+            var chatMembers = await client.SearchChatMembersAsync(
+                chatId: supergroupId,    // 1.8+ 直接接受 SupergroupId
                 query: "",
                 limit: batchSize,
-                filter: null
-            );
+                filter: new TdApi.ChatMembersFilter.ChatMembersFilterMembers());
 
-            if (chatMemberIds?.MemberIds == null || chatMemberIds.MemberIds.Length == 0)
+            var members = chatMembers?.Members;
+            if (members == null || members.Length == 0)
             {
                 hasMore = false;
                 break;
             }
 
-            foreach (var memberId in chatMemberIds.MemberIds)
+            foreach (var cm in members)
             {
-                if (result.Any(r => r.UserId == memberId))
-                    continue;
+                // 新版 TDLib: 成员 ID 来自 member.MemberId (MessageSender),需要拆出 userId
+                if (cm.MemberId is not TdApi.MessageSender.MessageSenderUser msu) continue;
+                if (result.Any(r => r.UserId == msu.UserId)) continue;
+                if (limit > 0 && result.Count >= limit) { hasMore = false; break; }
 
                 try
                 {
-                    var user = await client.GetUserAsync(memberId);
+                    var user = await client.GetUserAsync(msu.UserId);
                     var info = new MemberInfo
                     {
                         UserId = user.Id,
@@ -166,7 +178,7 @@ async Task<List<MemberInfo>> ExportChatMembersAsync(TdClient client, long chatId
                         LastName = user.LastName,
                         Username = user.Usernames?.ActiveUsernames?.FirstOrDefault(),
                         PhoneNumber = user.PhoneNumber,
-                        IsBot = user.IsBot,
+                        IsBot = user.Type is TdApi.UserType.UserTypeBot,
                         Status = GetUserStatus(user.Status),
                         MemberType = "Member"
                     };
@@ -183,30 +195,19 @@ async Task<List<MemberInfo>> ExportChatMembersAsync(TdClient client, long chatId
                 }
                 catch (TdException ex)
                 {
-                    logger.ZLogWarning($"获取用户 {memberId} 失败: {ex.Error.Message}");
-                }
-
-                if (limit > 0 && result.Count >= limit)
-                {
-                    hasMore = false;
-                    break;
+                    logger.ZLogWarning($"获取用户 {msu.UserId} 失败: {ex.Error.Message}");
                 }
             }
 
-            offset += chatMemberIds.MemberIds.Length;
-
-            if (chatMemberIds.MemberIds.Length < batchSize)
-            {
-                hasMore = false;
-            }
-
+            offset += members.Length;
+            if (members.Length < batchSize) hasMore = false;
             logger.ZLogInformation($"已导出 {result.Count} 个成员...");
             await Task.Delay(300);
         }
         catch (TdException ex) when (ex.Error.Code == 429)
         {
             int retryAfter = TdlEnv.ParseRetryAfter(ex);
-            logger.ZLogWarning($"触发频率限制，等待 {retryAfter} 秒后继续...");
+            logger.ZLogWarning($"触发频率限制,等待 {retryAfter} 秒后继续...");
             await Task.Delay(retryAfter * 1000);
         }
         catch (Exception ex)
@@ -221,9 +222,13 @@ async Task<List<MemberInfo>> ExportChatMembersAsync(TdClient client, long chatId
 
 async Task<MemberInfo?> BuildMemberInfo(TdClient client, TdApi.ChatMember member, bool raw, ILogger logger)
 {
+    // 新版 TDLib: MemberId 是 MessageSender,需要拆出 UserId
+    if (member.MemberId is not TdApi.MessageSender.MessageSenderUser msu) return null;
+    long userId = msu.UserId;
+
     try
     {
-        var user = await client.GetUserAsync(member.MemberId);
+        var user = await client.GetUserAsync(userId);
         var info = new MemberInfo
         {
             UserId = user.Id,
@@ -231,7 +236,7 @@ async Task<MemberInfo?> BuildMemberInfo(TdClient client, TdApi.ChatMember member
             LastName = user.LastName,
             Username = user.Usernames?.ActiveUsernames?.FirstOrDefault(),
             PhoneNumber = user.PhoneNumber,
-            IsBot = user.IsBot,
+            IsBot = user.Type is TdApi.UserType.UserTypeBot,
             Status = GetUserStatus(user.Status),
             MemberType = member.Status switch
             {
@@ -257,7 +262,7 @@ async Task<MemberInfo?> BuildMemberInfo(TdClient client, TdApi.ChatMember member
     }
     catch (Exception ex)
     {
-        logger.ZLogWarning(ex, $"构建成员信息失败: UserId={member.MemberId}");
+        logger.ZLogWarning(ex, $"构建成员信息失败: UserId={userId}");
         return null;
     }
 }
