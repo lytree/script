@@ -210,7 +210,7 @@ public class TdlEnv
         var code = Console.ReadLine();
         await _client.ExecuteAsync(new TdApi.CheckAuthenticationEmailCode
         {
-            Code = new TdApi.EmailCodeAuthenticationCode { Code = code }
+            Code = new TdApi.EmailAddressAuthentication.EmailAddressAuthenticationCode { Code = code }
         });
 
         if (!PasswordNeeded) { return; }

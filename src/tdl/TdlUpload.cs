@@ -5,6 +5,7 @@
 #:include TdlEnv.cs
 
 #:package TDLib@*
+#:package tdlib.api@*
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
 #:package System.CommandLine@*
@@ -202,48 +203,54 @@ async Task UploadFileAsync(TdClient client, long chatId, long? topicId, string f
     var fileInfo = new FileInfo(filePath);
     task.MaxValue = fileInfo.Length;
 
-    var inputFile = await client.ExecuteAsync(new TdApi.ReadFile
-    {
-        Path = filePath
-    });
+    // 新版 TDLib: 直接传本地路径,不再用 ReadFile 预读
+    var localFile = new TdApi.InputFile.InputFileLocal { Path = filePath };
 
     TdApi.InputMessageContent content;
     if (asPhoto && IsImageFile(filePath))
     {
         content = new TdApi.InputMessageContent.InputMessagePhoto
         {
-            Photo = new TdApi.InputFile.InputFileId { Id = inputFile.Id },
-            Thumbnail = null,
-            AddedStickerFileIds = null,
-            Width = 0,
-            Height = 0,
+            Photo = new TdApi.InputPhoto
+            {
+                Photo = localFile,
+                Thumbnail = null,
+                AddedStickerFileIds = null,
+                Width = 0,
+                Height = 0,
+            },
             Caption = BuildFormattedText(caption ?? fileName),
             SelfDestructType = null,
-            HasSpoiler = false
+            HasSpoiler = false,
+            ShowCaptionAboveMedia = false
         };
     }
     else
     {
         content = new TdApi.InputMessageContent.InputMessageDocument
         {
-            Document = new TdApi.InputFile.InputFileId { Id = inputFile.Id },
-            Thumbnail = null,
-            DisableContentTypeDetection = false,
+            Document = new TdApi.InputDocument
+            {
+                Document = localFile,
+                Thumbnail = null,
+                DisableContentTypeDetection = false,
+            },
             Caption = BuildFormattedText(caption ?? fileName)
         };
     }
 
-    var sendArgs = new TdApi.SendMessageArgs
-    {
-        ChatId = chatId,
-        MessageThreadId = topicId ?? 0,
-        ReplyTo = null,
-        Options = null,
-        ReplyMarkup = null,
-        InputMessageContent = content
-    };
+    // 新版 TDLib: SendMessageAsync 改为 (chatId, topicId, replyTo, options, replyMarkup, content)
+    var messageTopic = topicId.HasValue && topicId.Value > 0
+        ? new TdApi.MessageTopic.MessageTopicForum { ForumTopicId = (int)topicId.Value }
+        : null;
 
-    var result = await client.SendMessageAsync(sendArgs);
+    var result = await client.SendMessageAsync(
+        chatId: chatId,
+        topicId: messageTopic,
+        replyTo: null,
+        options: null,
+        replyMarkup: null,
+        inputMessageContent: content);
     task.Value = task.MaxValue;
     logger.ZLogInformation($"已上传: {fileName} -> MsgId={result.Id}");
 }
