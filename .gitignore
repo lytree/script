@@ -372,3 +372,7 @@ src/Http/api.cs
 *.mp4
 output
 output.bmp
+
+# chunsou 指纹识别工具：运行产物与含凭据的配置
+chunsou/results/
+chunsou/config.ini
