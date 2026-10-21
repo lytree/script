@@ -16,7 +16,7 @@
 # ============================================================================
 
 param(
-    [string]$Dir      = "C:\Users\<user>\Downloads\Video",
+    [string]$Dir      = $(if ($env:VIDEO_SEARCH_DIR) { $env:VIDEO_SEARCH_DIR } else { "." }),
     [string]$OutDir   = "F:\Code\Github\script\btsou_results",
     [int]   $Pages    = 1,
     [switch]$Precise

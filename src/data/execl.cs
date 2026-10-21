@@ -11,8 +11,9 @@ using OfficeOpenXml;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
-//Excel文件所在的地址
-FileInfo file = new(@"C:\Users\<user>\Downloads\c_machine_position.xlsx");
+//Excel文件所在的地址（用环境变量 EXCEL_FILE 指定，不把本机绝对路径写进源码）
+var excelPath = Environment.GetEnvironmentVariable("EXCEL_FILE") ?? "c_machine_position.xlsx";
+FileInfo file = new(excelPath);
 ExcelPackage.License.SetNonCommercialPersonal("My Name");//个人
 using (ExcelPackage excelPackage = new(file))
 {

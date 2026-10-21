@@ -19,7 +19,7 @@ using System.Text.RegularExpressions;
 //   dotnet run ImportExcelToLocalDb.cs -- --db RecordDB       # 指定数据库名
 // ============================================================
 
-const string DefaultFile = @"C:\Users\<user>\OneDrive\文档\记录.xlsx";
+const string DefaultFile = "记录.xlsx";
 const string DefaultDb = "RecordDB";
 const string ConnPrefix = "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true;TrustServerCertificate=true;";
 

@@ -12,7 +12,8 @@ using Spectre.Console;
 var pathOption = new Option<string>("--path")
 {
     Description = "Path to .mov file or directory containing .mov files",
-    DefaultValueFactory = (res) => @"C:\Users\<user>\Downloads\Telegram Desktop"
+    // 默认值走环境变量，不把本机绝对路径写进源码
+    DefaultValueFactory = (res) => Environment.GetEnvironmentVariable("MOV_INPUT_PATH") ?? "."
 };
 
 var ffmpegPathOption = new Option<string>("--ffmpeg")

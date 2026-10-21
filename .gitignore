@@ -368,11 +368,15 @@ src/phm/*
 src/Leaf/*
 src/Http/*
 src/Bytes/huaneng.cs
-src/Http/api.cs
 *.mp4
 output
 output.bmp
 
-# chunsou 指纹识别工具：运行产物与含凭据的配置
-chunsou/results/
-chunsou/config.ini
+# chunsou 指纹识别工具：运行产物（目录已迁到 src/ 下，用 **/ 覆盖两种位置）
+**/chunsou/results/
+
+# 含凭据的配置文件（FOFA / Hunter / GPT / DeepSeek key），禁止入库
+**/config.ini
+
+# 登录凭证目录（login.cs 写入 accessToken / refreshToken），禁止入库
+**/auths/

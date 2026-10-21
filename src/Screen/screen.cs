@@ -22,13 +22,19 @@ using FreeSql;
 using Helper;
 using SkiaSharp;
 
+// 数据库凭据与内网地址一律走环境变量，不写进源码（仓库为公开仓库，硬编码会直接泄露）。
+//   $env:SCREEN_MYSQL_CONFIG = "Data Source=<host>;Port=3306;User ID=<user>;Password=<pwd>;database=<db>;Charset=utf8;SslMode=none;Max pool size=1;Connection Timeout=10"
+//   $env:SCREEN_MYSQL_DATA   = "Data Source=<host>;Port=3306;User ID=<user>;Password=<pwd>;database=<db>;Charset=utf8;SslMode=none;Max pool size=1;Connection Timeout=10"
+var configConn = RequireEnv("SCREEN_MYSQL_CONFIG");
+var dataConn = RequireEnv("SCREEN_MYSQL_DATA");
+
 IFreeSql config = new FreeSql.FreeSqlBuilder()
-   .UseConnectionString(FreeSql.DataType.MySql, "Data Source=10.100.x.x;Port=3306;User ID=***;Password=***;database=<db>;Charset=utf8;SslMode=none;Max pool size=1;Connection Timeout=10")
+   .UseConnectionString(FreeSql.DataType.MySql, configConn)
    // .UseMonitorCommand(cmd => Console.WriteLine($"Sql：{cmd.CommandText}"))//监听SQL语句
    .Build(); //请务必定义成 Singleton 单例模式
 
 IFreeSql data = new FreeSql.FreeSqlBuilder()
-   .UseConnectionString(FreeSql.DataType.MySql, "Data Source=10.100.x.x;Port=3306;User ID=***;Password=***;database=<db>;Charset=utf8;SslMode=none;Max pool size=1;Connection Timeout=10")
+   .UseConnectionString(FreeSql.DataType.MySql, dataConn)
     .UseMonitorCommand(cmd => Console.WriteLine($"Sql：{cmd.CommandText}"))//监听SQL语句
    .Build(); //请务必定义成 Singleton 单例模式
 
@@ -86,6 +92,15 @@ void createImage(Data.Machine machine, Data.MachinePosition position, DateTime s
     var title = $"{machine.MName}-{position.PositionName}-波形频谱图    {Helpers.ToDateTime(vib.SaveTimeCom):yyyy-MM-dd hh:mm:ss}  rpm: {vib.Speed}  rms: {vib.VibRms?.ToString("f4")}g  p: {vib.VibP?.ToString("f4")}g  pp: {vib.VibPp?.ToString("f4")}g";
     Helpers.VerticalMergeImage($"./image/{MyRegex().Replace(machine.MName, "")}#机组{position.PositionName}波形频谱图.png", Helpers.WaveformChart([.. wave_x], [.. wave_y], title), Helpers.SpectrumChart([.. xfft.ToList().Select(Convert.ToDouble)], [.. yfft.ToList().Select(Convert.ToDouble)]), Helpers.TrendChartLine([(x, y, "")]));
 
+}
+
+// 读取必需的环境变量，缺失时给出明确指引而不是静默使用内置默认值。
+static string RequireEnv(string name)
+{
+    var value = Environment.GetEnvironmentVariable(name);
+    if (string.IsNullOrWhiteSpace(value))
+        throw new InvalidOperationException($"缺少环境变量 {name}，请先设置后再运行。");
+    return value.Trim();
 }
 
 partial class Program
