@@ -40,6 +40,11 @@ bool ReadBool(JsonElement el)
     return false;
 }
 
+// 是否启用本地消息库 (env tdl_use_message_db=1/true 开启, 默认关闭)。
+// 本脚本依赖 searchChatMessages 建立媒体索引, 需开启该开关才检索得到历史消息。
+bool UseMessageDb() =>
+    Environment.GetEnvironmentVariable("tdl_use_message_db", EnvironmentVariableTarget.User) is "1" or "true";
+
 using (var client = new TdJsonClient())
 {
     client.Send("{\"@type\":\"setLogVerbosityLevel\",\"new_verbosity_level\":2}");
@@ -174,7 +179,11 @@ bool InitTdlib(EventLoop state)
     Directory.CreateDirectory(Path.Combine(tdlRoot, "db"));
     var tdlPath = tdlRoot.Replace("\\", "/");
 
-    state.Send("{\"@type\":\"setTdlibParameters\",\"api_id\":\"" + apiId + "\",\"api_hash\":\"" + apiHash + "\",\"device_model\":\"PC\",\"system_language_code\":\"en\",\"application_version\":\"1.0.0\",\"database_directory\":\"" + tdlPath + "/db\",\"files_directory\":\"" + tdlPath + "/files\",\"use_file_database\":true,\"use_chat_info_database\":true,\"use_message_database\":true}");
+    state.Send("{\"@type\":\"setTdlibParameters\",\"api_id\":\"" + apiId + "\",\"api_hash\":\"" + apiHash + "\",\"device_model\":\"PC\",\"system_language_code\":\"en\",\"application_version\":\"1.0.0\",\"database_directory\":\"" + tdlPath + "/db\",\"files_directory\":\"" + tdlPath + "/files\",\"use_file_database\":true,\"use_chat_info_database\":true,\"use_message_database\":" + (UseMessageDb() ? "true" : "false") + "}");
+    if (!UseMessageDb())
+    {
+        LogWarn("本地消息库已关闭 (tdl_use_message_db 未设置), searchChatMessages 将检索不到历史消息; 如需使用请设置 tdl_use_message_db=1");
+    }
     LogInfo("TDLib 参数已下发, 数据库目录: " + tdlRoot);
     return true;
 }

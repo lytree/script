@@ -241,7 +241,7 @@ public class TdlForwardService
             FilesDirectory = Path.Combine(_tdlRoot, "files"),
             UseFileDatabase = true,
             UseChatInfoDatabase = true,
-            UseMessageDatabase = true,
+            UseMessageDatabase = TdlEnv.UseMessageDb,
         });
 
         var (proxyHost, proxyPort) = TdlEnv.GetProxyConfig();

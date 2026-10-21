@@ -379,6 +379,14 @@ public class TdlEnv
         return (raw[..idx], port);
     }
 
+    /// <summary>
+    /// 是否启用本地消息库 (env tdl_use_message_db=1/true 开启, 默认关闭)。
+    /// 默认关闭以避免 ~/.tdl/db 无限膨胀; 关闭后 searchChatMessages 无法检索历史消息,
+    /// 仅 getChatHistory / getMessage 等服务端接口仍可用。
+    /// </summary>
+    public static bool UseMessageDb =>
+        Environment.GetEnvironmentVariable("tdl_use_message_db", EnvironmentVariableTarget.User) is "1" or "true";
+
     // ──────────────────────────────────────────────
     //  私有方法
     // ──────────────────────────────────────────────
@@ -446,7 +454,7 @@ public class TdlEnv
             FilesDirectory = Path.Combine(_filesDir, "files"),
             UseFileDatabase = true,
             UseChatInfoDatabase = true,
-            UseMessageDatabase = true,
+            UseMessageDatabase = UseMessageDb,
         });
 
         var (proxyHost, proxyPort) = GetProxyConfig();

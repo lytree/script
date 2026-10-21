@@ -25,6 +25,11 @@ int ReadInt(JsonElement el) =>
     el.ValueKind == JsonValueKind.Number ? el.GetInt32() :
     el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out var n) ? n : 0;
 
+// 是否启用本地消息库 (env tdl_use_message_db=1/true 开启, 默认关闭)。
+// 本脚本依赖 searchChatMessages 查找 /start, 需开启该开关才检索得到历史消息。
+bool UseMessageDb() =>
+    Environment.GetEnvironmentVariable("tdl_use_message_db", EnvironmentVariableTarget.User) is "1" or "true";
+
 // ─────────────────────────────────────────────────────────────
 // CLI
 // ─────────────────────────────────────────────────────────────
@@ -424,7 +429,12 @@ async Task<List<StartMarker>> SearchAllStartCommandsAsync(long chatIdVal)
     var loop = new EventLoop(client);
     loop.Start();
 
-    loop.Send("{\"@type\":\"setTdlibParameters\",\"api_id\":\"" + apiId + "\",\"api_hash\":\"" + apiHash + "\",\"device_model\":\"PC\",\"system_language_code\":\"en\",\"application_version\":\"1.0.0\",\"database_directory\":\"" + tdlPath + "/db\",\"files_directory\":\"" + tdlPath + "/files\",\"use_file_database\":true,\"use_chat_info_database\":true,\"use_message_database\":true}");
+    loop.Send("{\"@type\":\"setTdlibParameters\",\"api_id\":\"" + apiId + "\",\"api_hash\":\"" + apiHash + "\",\"device_model\":\"PC\",\"system_language_code\":\"en\",\"application_version\":\"1.0.0\",\"database_directory\":\"" + tdlPath + "/db\",\"files_directory\":\"" + tdlPath + "/files\",\"use_file_database\":true,\"use_chat_info_database\":true,\"use_message_database\":" + (UseMessageDb() ? "true" : "false") + "}");
+
+    if (!UseMessageDb())
+    {
+        LogWarn("本地消息库已关闭 (tdl_use_message_db 未设置), searchChatMessages 将检索不到历史消息; 如需使用请设置 tdl_use_message_db=1");
+    }
 
     if (!await WaitFor(loop, "Ready", 60))
     {
