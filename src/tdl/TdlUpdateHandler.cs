@@ -22,6 +22,11 @@ public class TdlUpdateHandler
     public bool AuthNeeded { get; private set; }
     public bool PasswordNeeded { get; private set; }
 
+    /// <summary>
+    /// 最近一次授权状态名称 (如 AuthorizationStateWaitCode), 用于判断未完成的登录流程。
+    /// </summary>
+    public string? CurrentState { get; private set; }
+
     public TdlUpdateHandler(ManualResetEventSlim readyToAuthenticate, ILogger logger)
     {
         _readyToAuthenticate = readyToAuthenticate;
@@ -43,6 +48,11 @@ public class TdlUpdateHandler
     public async Task ProcessUpdates(TdClient client, TdApi.Update update, string outputPath)
     {
         var logger = _logger;
+
+        if (update is TdApi.Update.UpdateAuthorizationState authStateUpdate)
+        {
+            CurrentState = authStateUpdate.AuthorizationState.GetType().Name;
+        }
 
         switch (update)
         {

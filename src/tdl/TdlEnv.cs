@@ -70,6 +70,19 @@ public class TdlEnv
     /// </summary>
     public async Task AuthenticateAsync()
     {
+        // TDLib 重启后会恢复未完成的登录流程, 此时不能重复请求验证码 (会使旧验证码失效)
+        if (_updateHandler.CurrentState == nameof(TdApi.AuthorizationState.AuthorizationStateWaitCode))
+        {
+            await SubmitCodeAsync();
+            return;
+        }
+
+        if (_updateHandler.CurrentState == nameof(TdApi.AuthorizationState.AuthorizationStateWaitPassword))
+        {
+            await SubmitPasswordAsync();
+            return;
+        }
+
         var phone = Environment.GetEnvironmentVariable("tdl_phone", EnvironmentVariableTarget.User);
         var botToken = Environment.GetEnvironmentVariable("tdl_bot_token", EnvironmentVariableTarget.User);
 
@@ -107,12 +120,27 @@ public class TdlEnv
             PhoneNumber = phoneNumber
         });
 
+        await SubmitCodeAsync();
+    }
+
+    /// <summary>
+    /// 提交短信验证码, 必要时继续提交两步验证密码。
+    /// </summary>
+    async Task SubmitCodeAsync()
+    {
         Console.Write("输入登录验证码: ");
-        var code = Console.ReadLine();
+        var code = Console.ReadLine() ?? "";
         await _client.ExecuteAsync(new TdApi.CheckAuthenticationCode { Code = code });
 
         if (!PasswordNeeded) { return; }
+        await SubmitPasswordAsync();
+    }
 
+    /// <summary>
+    /// 提交两步验证密码。
+    /// </summary>
+    async Task SubmitPasswordAsync()
+    {
         Console.Write("输入两步验证密码: ");
         var password = ReadPassword();
         await _client.ExecuteAsync(new TdApi.CheckAuthenticationPassword { Password = password });
