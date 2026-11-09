@@ -13,6 +13,8 @@ public class TdlForwardService
     readonly TdlUpdateHandler _updateHandler;
     readonly ManualResetEventSlim _readyToAuthenticate;
     readonly Dictionary<long, TaskCompletionSource<TdApi.Error>> _pendingSends = [];
+    readonly HashSet<long> _completedSends = [];
+    readonly Dictionary<long, TdApi.Error> _earlySendFailures = [];
     readonly object _pendingLock = new();
 
     public bool AuthNeeded => _updateHandler.AuthNeeded;
@@ -187,7 +189,7 @@ public class TdlForwardService
                     pendingGroup = pending;
                 }
 
-                var (forwarded, skipped) = await ForwardGroupedMessages(db, toProcess, sourceChatId, targetChatId, forwardComments);
+                var (forwarded, skipped) = await ForwardGroupedMessages(db, toProcess, sourceChatId, targetChatId, null, forwardComments);
                 totalForwarded += forwarded;
                 totalSkipped += skipped;
 
@@ -215,7 +217,7 @@ public class TdlForwardService
 
         if (pendingGroup != null && pendingGroup.Count > 0)
         {
-            var (forwarded, skipped) = await ForwardGroupedMessages(db, pendingGroup, sourceChatId, targetChatId, forwardComments);
+            var (forwarded, skipped) = await ForwardGroupedMessages(db, pendingGroup, sourceChatId, targetChatId, null, forwardComments);
             totalForwarded += forwarded;
             totalSkipped += skipped;
         }
@@ -226,6 +228,90 @@ public class TdlForwardService
         }
 
         return totalForwarded;
+    }
+
+    /// <summary>
+    /// 按指定消息 ID 列表转发 (支持论坛话题与相册分组), 可选转发评论。
+    /// </summary>
+    public async Task<int> ForwardMessagesByIdsAsync(ForwardDbContext db, long sourceChatId, long targetChatId,
+        IReadOnlyCollection<long> messageIds, TdApi.MessageTopic? topic, bool forwardComments)
+    {
+        var messages = await LoadMessagesWithAlbumsAsync(sourceChatId, messageIds);
+        if (messages.Count == 0)
+        {
+            _logger.ZLogWarning($"未找到任何可转发的源消息 (ChatId={sourceChatId})");
+            return 0;
+        }
+
+        var foundIds = messages.Select(m => m.Id).ToHashSet();
+        var missing = messageIds.Distinct().Where(id => !foundIds.Contains(id)).OrderBy(id => id).ToList();
+        if (missing.Count > 0)
+        {
+            _logger.ZLogWarning($"以下消息不存在或无权访问, 已跳过: {string.Join(",", missing)}");
+        }
+
+        var (forwarded, _) = await ForwardGroupedMessages(db, messages, sourceChatId, targetChatId, topic, forwardComments);
+        return forwarded;
+    }
+
+    /// <summary>
+    /// 按消息 ID 拉取消息, 并为相册消息补齐同 MediaAlbumId 的其他成员。
+    /// </summary>
+    public async Task<List<TdApi.Message>> LoadMessagesWithAlbumsAsync(long chatId, IReadOnlyCollection<long> messageIds)
+    {
+        const long messageIdStep = 1L << 20;
+
+        var found = new Dictionary<long, TdApi.Message>();
+        foreach (var chunk in messageIds.Distinct().OrderBy(id => id).Chunk(100))
+        {
+            var result = await _client.GetMessagesAsync(chatId, chunk);
+            foreach (var msg in result.Messages_ ?? [])
+            {
+                if (msg != null) found[msg.Id] = msg;
+            }
+            await Task.Delay(300);
+        }
+
+        // 相册消息在 JSON 里通常只出现一个 ID, 这里按 MediaAlbumId 补齐同组消息
+        var albumAnchors = found.Values
+            .Where(m => m.MediaAlbumId != 0)
+            .GroupBy(m => m.MediaAlbumId)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var anchor in albumAnchors)
+        {
+            if (anchor.Id % messageIdStep == 0)
+            {
+                // 新版 TDLib 的频道消息 ID 带 2^20 位移, 相册成员 ID 相差一个步长
+                var candidates = Enumerable.Range(-9, 19)
+                    .Select(k => anchor.Id + k * messageIdStep)
+                    .ToArray();
+                var albumMessages = await _client.GetMessagesAsync(chatId, candidates);
+                foreach (var msg in albumMessages.Messages_ ?? [])
+                {
+                    if (msg != null && msg.MediaAlbumId == anchor.MediaAlbumId)
+                    {
+                        found[msg.Id] = msg;
+                    }
+                }
+            }
+            else
+            {
+                var history = await _client.GetChatHistoryAsync(chatId, anchor.Id + 1, 0, 22, false);
+                foreach (var msg in history.Messages_ ?? [])
+                {
+                    if (msg != null && msg.MediaAlbumId == anchor.MediaAlbumId)
+                    {
+                        found[msg.Id] = msg;
+                    }
+                }
+            }
+
+            await Task.Delay(300);
+        }
+
+        return found.Values.OrderBy(m => m.Id).ToList();
     }
 
     async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
@@ -269,12 +355,12 @@ public class TdlForwardService
         switch (update)
         {
             case TdApi.Update.UpdateMessageSendSucceeded umss:
-                cbLogger.ZLogTrace($"消息发送成功: MsgId={umss.Message.Id}");
-                RemovePendingSend(umss.Message.Id);
+                cbLogger.ZLogTrace($"消息发送成功: MsgId={umss.Message.Id}, 临时 Id={umss.OldMessageId}");
+                RemovePendingSend(umss.OldMessageId);
                 break;
             case TdApi.Update.UpdateMessageSendFailed umsf:
-                cbLogger.ZLogWarning($"消息发送失败: MsgId={umsf.Message.Id}, 错误: {umsf.Error.Code} {umsf.Error.Message}");
-                NotifySendFailed(umsf.Message.Id, umsf.Error);
+                cbLogger.ZLogWarning($"消息发送失败: MsgId={umsf.Message.Id}, 临时 Id={umsf.OldMessageId}, 错误: {umsf.Error.Code} {umsf.Error.Message}");
+                NotifySendFailed(umsf.OldMessageId, umsf.Error);
                 break;
             case TdApi.Update.UpdateDeleteMessages udm:
                 if (!udm.IsPermanent) break;
@@ -359,7 +445,7 @@ public class TdlForwardService
         return (toProcess, pending);
     }
 
-    async Task<(int forwarded, int skipped)> ForwardGroupedMessages(ForwardDbContext db, List<TdApi.Message> messages, long sourceChatId, long targetChatId, bool forwardComments)
+    async Task<(int forwarded, int skipped)> ForwardGroupedMessages(ForwardDbContext db, List<TdApi.Message> messages, long sourceChatId, long targetChatId, TdApi.MessageTopic? topic, bool forwardComments)
     {
         if (messages.Count == 0) return (0, 0);
 
@@ -374,6 +460,16 @@ public class TdlForwardService
 
             if (idsToForward.Count == 0)
             {
+                // 消息已转发过但评论可能尚未转发：补转评论（评论记录同样走 DB 去重）
+                if (forwardComments)
+                {
+                    var label = group.First().MediaAlbumId == 0
+                        ? $"MsgId:{group.First().Id}"
+                        : $"相册:{group.First().MediaAlbumId}";
+                    _logger.ZLogInformation($"消息已转发，继续检查并补转评论 ({label})");
+                    await ForwardCommentsForMessages(db, sourceChatId, targetChatId, topic, group, group.ToArray());
+                    await Task.Delay(1000);
+                }
                 continue;
             }
 
@@ -389,22 +485,43 @@ public class TdlForwardService
 
                     var result = await _client.ForwardMessagesAsync(
                         chatId: targetChatId,
+                        topicId: topic,
                         fromChatId: sourceChatId,
                         messageIds: ids,
                         sendCopy: true,
                         removeCaption: false
                     );
 
-                    if (result.Messages_ != null)
+                    if (result?.Messages_ == null)
                     {
-                        foreach (var rMsg in result.Messages_)
+                        throw new InvalidOperationException("forwardMessages 返回了空结果");
+                    }
+
+                    // forwardMessages 对无法转发的消息返回 null 占位, 顺序与传入 messageIds 一致
+                    var sentSourceIds = new List<long>();
+                    var sentTargetMessages = new List<TdApi.Message>();
+                    var unforwardableIds = new List<long>();
+                    for (int i = 0; i < ids.Length; i++)
+                    {
+                        var rMsg = i < result.Messages_.Length ? result.Messages_[i] : null;
+                        if (rMsg == null)
                         {
-                            RegisterPendingSend(rMsg.Id);
+                            unforwardableIds.Add(ids[i]);
+                            continue;
                         }
+
+                        sentSourceIds.Add(ids[i]);
+                        sentTargetMessages.Add(rMsg);
+                        RegisterPendingSend(rMsg.Id);
+                    }
+
+                    if (unforwardableIds.Count > 0)
+                    {
+                        _logger.ZLogWarning($"有 {unforwardableIds.Count} 条消息无法转发, 已跳过: {string.Join(",", unforwardableIds)}");
                     }
 
                     var sendError = await WaitForSendResultAsync(
-                        result.Messages_?.Select(m => m.Id).ToArray() ?? [], 10);
+                        sentTargetMessages.Select(m => m.Id).ToArray(), 10);
 
                     if (sendError != null)
                     {
@@ -424,16 +541,24 @@ public class TdlForwardService
                         continue;
                     }
                     await Task.Delay(1000);
-                    var forwardedMessages = group.Where(m => idsToForward.Contains(m.Id)).ToList();
+                    var forwardedMessages = group.Where(m => sentSourceIds.Contains(m.Id)).ToList();
                     await RecordForwardedMessages(db, sourceChatId, targetChatId, forwardedMessages, isSuccess: true);
 
-                    totalForwarded += ids.Length;
-                    var albumLabel = group.First().MediaAlbumId != 0 ? $"分组:{group.First().MediaAlbumId}" : $"独立消息 {group.First().Id}";
-                    _logger.ZLogInformation($"已转发 {totalForwarded} 条消息 ({albumLabel}, 数量: {ids.Length})");
-
-                    if (forwardComments && result.Messages_ != null)
+                    if (unforwardableIds.Count > 0)
                     {
-                        await ForwardCommentsForMessages(db, sourceChatId, targetChatId, forwardedMessages, result.Messages_);
+                        var blockedMessages = group.Where(m => unforwardableIds.Contains(m.Id)).ToList();
+                        await RecordForwardedMessages(db, sourceChatId, targetChatId, blockedMessages,
+                            isSuccess: false, error: "Message can't be forwarded");
+                    }
+
+                    totalForwarded += sentSourceIds.Count;
+                    var albumLabel = group.First().MediaAlbumId != 0 ? $"分组:{group.First().MediaAlbumId}" : $"独立消息 {group.First().Id}";
+                    _logger.ZLogInformation($"已转发 {totalForwarded} 条消息 ({albumLabel}, 数量: {sentSourceIds.Count})");
+
+                    if (forwardComments && sentTargetMessages.Count > 0)
+                    {
+                        await ForwardCommentsForMessages(db, sourceChatId, targetChatId, topic,
+                            forwardedMessages, sentTargetMessages.ToArray());
                     }
 
                     await Task.Delay(1000);
@@ -466,7 +591,7 @@ public class TdlForwardService
         return (totalForwarded, totalSkipped);
     }
 
-    async Task ForwardCommentsForMessages(ForwardDbContext db, long sourceChatId, long targetChatId, List<TdApi.Message> sourceMessages, TdApi.Message[] forwardedMessages)
+    async Task ForwardCommentsForMessages(ForwardDbContext db, long sourceChatId, long targetChatId, TdApi.MessageTopic? topic, List<TdApi.Message> sourceMessages, TdApi.Message[] forwardedMessages)
     {
         for (int i = 0; i < sourceMessages.Count; i++)
         {
@@ -478,7 +603,8 @@ public class TdlForwardService
             try
             {
                 var replyInfo = sourceMsg.InteractionInfo?.ReplyInfo;
-                if (replyInfo == null || replyInfo.ReplyCount == 0) continue;
+                // ReplyInfo 缺失时仍尝试拉取评论区 (频道帖的 InteractionInfo 不一定可用)
+                if (replyInfo != null && replyInfo.ReplyCount == 0) continue;
 
                 var allComments = new List<TdApi.Message>();
                 long fromMsgId = 0;
@@ -514,10 +640,10 @@ public class TdlForwardService
                 }
                 if (allComments.Count == 0) continue;
 
-                var commentList = allComments.OrderBy(m => m.Id).ToList();
+                var commentList = allComments.Where(m => m.Id != sourceMsg.Id).OrderBy(m => m.Id).ToList();
+                if (commentList.Count == 0) continue;
                 var groups = GroupMessagesByAlbum(commentList);
                 _logger.ZLogInformation($"转发评论: MsgId={sourceMsg.Id}, 评论数={commentList.Count}, 分组数={groups.Count}");
-                int retryCount = 0;
                 string? lastError = null;
                 foreach (var group in groups)
                 {
@@ -532,47 +658,77 @@ public class TdlForwardService
                     var sourceCommonChatId = group.Select(m => m.ChatId).OrderBy(id => id).First();
                     var albumLabel = group[0].MediaAlbumId != 0 ? $"分组:{group[0].MediaAlbumId}" : $"独立评论 {group[0].Id}";
 
-                    var result = await _client.ForwardMessagesAsync(
-                         chatId: targetChatId,
-                         fromChatId: sourceCommonChatId,
-                         messageIds: groupIds,
-                         sendCopy: true,
-                         removeCaption: false
-                     );
-                    if (result.Messages_ != null)
+                    bool success = false;
+                    for (int attempt = 1; attempt <= 5 && !success; attempt++)
                     {
-                        foreach (var rMsg in result.Messages_)
+                        try
                         {
-                            RegisterPendingSend(rMsg.Id);
+                            var result = await _client.ForwardMessagesAsync(
+                                 chatId: targetChatId,
+                                 topicId: topic,
+                                 fromChatId: sourceCommonChatId,
+                                 messageIds: groupIds,
+                                 sendCopy: true,
+                                 removeCaption: false
+                             );
+                            if (result.Messages_ != null)
+                            {
+                                foreach (var rMsg in result.Messages_)
+                                {
+                                    RegisterPendingSend(rMsg.Id);
+                                }
+                            }
+
+                            var sendError = await WaitForSendResultAsync(
+                                result.Messages_?.Select(m => m.Id).ToArray() ?? [], 10);
+
+                            if (sendError != null)
+                            {
+                                if (sendError.Code == 429 || (sendError.Message?.Contains("Too Many Requests") ?? false))
+                                {
+                                    int retryAfter = TdlEnv.ParseRetryAfter(sendError);
+                                    _logger.ZLogWarning($"评论发送触发频率限制 (第{attempt}次)，等待 {retryAfter} 秒后重试...");
+                                    await Task.Delay(retryAfter * 1000);
+                                    continue;
+                                }
+
+                                lastError = $"{sendError.Code}: {sendError.Message}";
+                                _logger.ZLogError($"评论发送失败 (第{attempt}次重试): {lastError}");
+                                await Task.Delay(5000);
+                                continue;
+                            }
+
+                            await Task.Delay(1000);
+                            var forwardedCommentsMessages = group.Where(m => groupIds.Contains(m.Id)).ToList();
+                            await RecordForwardedMessages(db, sourceChatId, targetChatId, forwardedCommentsMessages, isSuccess: true);
+                            _logger.ZLogInformation($"已转发评论 {albumLabel}, 数量: {groupIds.Length}");
+                            // 固定间隔限速，避免短时间内向同一群组发送过多消息触发 FLOOD_WAIT
+                            await Task.Delay(5000);
+                            success = true;
                         }
-                    }
-
-                    var sendError = await WaitForSendResultAsync(
-                        result.Messages_?.Select(m => m.Id).ToArray() ?? [], 10);
-
-                    if (sendError != null)
-                    {
-                        if (sendError.Code == 429 || (sendError.Message?.Contains("Too Many Requests") ?? false))
+                        catch (TdException ex) when (ex.Error.Code == 429)
                         {
-                            int retryAfter = TdlEnv.ParseRetryAfter(sendError);
-                            retryCount++;
-                            _logger.ZLogWarning($"异步发送触发频率限制 (第{retryCount}次)，等待 {retryAfter} 秒后重试...");
+                            int retryAfter = TdlEnv.ParseRetryAfter(ex);
+                            _logger.ZLogWarning($"评论发送触发频率限制 (第{attempt}次)，等待 {retryAfter} 秒后重试...");
                             await Task.Delay(retryAfter * 1000);
-                            continue;
                         }
-
-                        lastError = $"{sendError.Code}: {sendError.Message}";
-                        retryCount++;
-                        _logger.ZLogError($"消息异步发送失败 (第{retryCount}次重试): {lastError}");
-                        await Task.Delay(5000);
-                        continue;
+                        catch (Exception ex)
+                        {
+                            lastError = ex.Message;
+                            _logger.ZLogError(ex, $"转发评论分组时出错 (第{attempt}次重试)");
+                            await Task.Delay(5000);
+                        }
                     }
-                    await Task.Delay(1000);
-                    var forwardedCommentsMessages = group.Where(m => groupIds.Contains(m.Id)).ToList();
-                    await RecordForwardedMessages(db, sourceChatId, targetChatId, forwardedCommentsMessages, isSuccess: true);
-                    _logger.ZLogInformation($"已转发评论 {albumLabel}, 数量: {groupIds.Length}");
-                    await Task.Delay(5000);
+
+                    if (!success)
+                    {
+                        _logger.ZLogError($"评论分组转发失败，跳过: {albumLabel}, 错误: {lastError}");
+                    }
                 }
+            }
+            catch (TdException ex) when (ex.Error.Code == 400)
+            {
+                _logger.ZLogTrace($"无评论区或无法读取: MsgId={sourceMsg.Id}");
             }
             catch (TdException ex)
             {
@@ -585,7 +741,10 @@ public class TdlForwardService
     {
         var allIds = group.Select(m => m.Id).ToList();
         var existingRecords = await db.ForwardRecords
-            .Where(r => r.SourceChatId == sourceChatId && r.TargetChatId == targetChatId && allIds.Contains(r.MessageId))
+            .Where(r => r.SourceChatId == sourceChatId
+                && r.TargetChatId == targetChatId
+                && r.IsSuccess
+                && allIds.Contains(r.MessageId))
             .Select(r => r.MessageId)
             .ToListAsync();
 
@@ -661,7 +820,25 @@ public class TdlForwardService
     {
         lock (_pendingLock)
         {
-            if (!_pendingSends.ContainsKey(messageId))
+            if (_pendingSends.ContainsKey(messageId))
+            {
+                return;
+            }
+
+            // Update 可能早于 forwardMessages 返回，此时先把结果记下来，注册时直接复用
+            if (_earlySendFailures.Remove(messageId, out var error))
+            {
+                var failed = new TaskCompletionSource<TdApi.Error>();
+                failed.TrySetResult(error);
+                _pendingSends[messageId] = failed;
+            }
+            else if (_completedSends.Remove(messageId))
+            {
+                var succeeded = new TaskCompletionSource<TdApi.Error>();
+                succeeded.TrySetResult(null);
+                _pendingSends[messageId] = succeeded;
+            }
+            else
             {
                 _pendingSends[messageId] = new TaskCompletionSource<TdApi.Error>();
             }
@@ -675,7 +852,11 @@ public class TdlForwardService
             if (_pendingSends.TryGetValue(messageId, out var tcs))
             {
                 tcs.TrySetResult(null);
-                _pendingSends.Remove(messageId);
+            }
+            else
+            {
+                // 结果早于注册到达，缓存等待 RegisterPendingSend 消费
+                _completedSends.Add(messageId);
             }
         }
     }
@@ -687,7 +868,10 @@ public class TdlForwardService
             if (_pendingSends.TryGetValue(messageId, out var tcs))
             {
                 tcs.TrySetResult(error);
-                _pendingSends.Remove(messageId);
+            }
+            else
+            {
+                _earlySendFailures[messageId] = error;
             }
         }
     }
@@ -727,6 +911,19 @@ public class TdlForwardService
         catch (OperationCanceledException)
         {
             return null;
+        }
+        finally
+        {
+            lock (_pendingLock)
+            {
+                for (int i = 0; i < messageIds.Length; i++)
+                {
+                    if (_pendingSends.TryGetValue(messageIds[i], out var current) && ReferenceEquals(current, tcsArray[i]))
+                    {
+                        _pendingSends.Remove(messageIds[i]);
+                    }
+                }
+            }
         }
     }
 }
