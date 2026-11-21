@@ -8,15 +8,15 @@
 | [`windows/`](windows/) | Windows 环境搭建 / 配置脚本（PowerShell、batch） | 命令行 |
 | [`third-party/`](third-party/) | 上游脚本的只读镜像（不入库发布，见[说明](third-party/README.md)） | 参考 / 复核 |
 
-> **迁移说明**：油猴脚本的 `@updateURL` / `@downloadURL` **仍指向原仓库** `raw.githubusercontent.com/lytree/GMScript/main/userscripts/...`。
-> 安装与自动更新请继续用下方原文链接；本仓库的副本只作归档与二次开发基线。
-> 若把地址改成本仓库路径，原已安装用户会断更，不要这么做。
+> **发布源已迁到本仓库**：从 v1.2.1 起，两个油猴脚本的 `@updateURL` / `@downloadURL` 均指向
+> `raw.githubusercontent.com/lytree/script/main/scripts/browser/...`，安装与自动更新都走下方地址。
+> 原 `lytree/GMScript` 仓库的 `userscripts/` 已冻结、不再更新 —— **老用户需按下方地址重装一次**才能接上新的更新链路（见[变更记录](#变更记录)）。
 
 ---
 
 ## 一、油猴脚本（[`browser/`](browser/)）
 
-个人维护的油猴脚本（Tampermonkey / Violentmonkey）合集。原 GMScript 仓库通过 `main` 分支的 raw 地址发布，**装一次即可自动更新**；本仓库只保留副本。
+个人维护的油猴脚本（Tampermonkey / Violentmonkey）合集。通过本仓库 `main` 分支的 raw 地址发布，**装一次即可自动更新**。脚本源自 `lytree/GMScript`，v1.2.1 起发布源已迁到本仓库的 [`browser/`](browser/)。
 
 ### 一键安装
 
@@ -25,23 +25,23 @@
 >
 > **同一功能的脚本只装一个。** Telegram 系只有一个脚本（#2 合并版）；旧版 `telegram-only` 已从仓库移除，若你此前装过，请先停用/删除旧版再装 #2，否则媒体查看器里会出现重复按钮。
 
-#### 1. Get Microsoft Rewards (修复/增强版) · v1.2.0
+#### 1. Get Microsoft Rewards (修复/增强版) · v1.2.1
 
 ```
-https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/get-microsoft-rewards.user.js
+https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js
 ```
 
-👉 [点击安装](https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/get-microsoft-rewards.user.js)
+👉 [点击安装](https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js)
 
 <sub>微软 Rewards 自动助手：本地自动搜索（多热搜源轮换）、每日活动、自动签到、阅读任务，支持 PC / 移动端接口双通道。**业务日期按太平洋时间（PT）计算**——Rewards 的日界是 PT 午夜（北京 15:00 / 16:00），dashboard 接口的 `dailySetPromotions` key 又可能按 UTC 出，用浏览器本地日期去比会差 8 小时、拿不到当天任务；v1.2.0 起统一以 PT 业务日为准，接口 key 兼容 UTC 口径。**浮动图标可拖拽**——位置只在当前页面内有效，不写存储、不跨刷新保留，每次打开都回到右下角（想立刻归位就双击标题栏）；靠近屏幕边缘时展开会自动往内收，展开后标题栏同样可拖，内容超长时面板内部滚动。</sub>
 
-#### 2. Telegram Media Downloader (Merged) · v1.2.0 · 推荐
+#### 2. Telegram Media Downloader (Merged) · v1.2.1 · 推荐
 
 ```
-https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-media-downloader-merged.user.js
+https://raw.githubusercontent.com/lytree/script/main/scripts/browser/telegram-media-downloader-merged.user.js
 ```
 
-👉 [点击安装](https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-media-downloader-merged.user.js)
+👉 [点击安装](https://raw.githubusercontent.com/lytree/script/main/scripts/browser/telegram-media-downloader-merged.user.js)
 
 <sub>由三份上游实现（Nestor Qin / yoshiko.wisoky / copyMister）与旧 `telegram-only` 变体合并而成的单一实现：受限频道下载、WebA(webz) + WebK(webk) 双端挂载、原生 `downloadToDisc` 通道优先、任务面板（标题栏可拖动、位置记忆、双击复位、取消 / 重试 / 续传 / 4 MB 分片）、右键菜单与选择栏批量下载、整组下载（相册 + 评论区）、受保护消息 `.no-forwards` 文字复制解锁、五语 i18n；不含任何推广 / 邀请 / 统计外链。**注意：这是新的脚本身份**，旧版 `telegram-only`（v1.0.7）已下线，请先停用/卸载旧版再装本脚本，否则媒体查看器会出现重复按钮。</sub>
 
@@ -51,8 +51,8 @@ https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-medi
 
 | 文件名 | 版本 | 说明 |
 | --- | --- | --- |
-| [`get-microsoft-rewards.user.js`](browser/get-microsoft-rewards.user.js) | 1.2.0 | 微软 Rewards 自动助手：本地自动搜索、每日活动、自动签到、阅读任务。多区域兼容与卡片过滤逻辑优化；**业务日期按 PT 计算**（修正与接口 UTC 日期差 8 小时、取不到当天任务的问题），每日任务批次按业务日挑选、缺失时回退到最近一批且不并入历史、不取未来批次；**浮动图标可拖拽（不记忆位置，刷新回右下角）、边缘自动避让、双击标题栏复位**，展开后标题栏也可拖，内容超长时面板内部滚动。<br>显示名：`Get Microsoft Rewards (修复/增强版)` |
-| [`telegram-media-downloader-merged.user.js`](browser/telegram-media-downloader-merged.user.js) | 1.2.0 | 从限制下载的 Telegram 频道获取图片 / 视频 / 语音 / 文件。**旧 `telegram-only` 与 `Telegram-Media-Downloader-Pro` 的合并版**：WebA(webz) + WebK(webk) 双端挂载、原生 `downloadToDisc` 通道优先；**默认不弹目录选择框，文件直接落系统下载目录**（可选指定归档目录）、任务面板（标题栏可拖动、位置记忆、双击复位、取消 / 重试 / 续传 / 4 MB 分片）、右键菜单下载、选择栏批量下载（面板显示 `n/N` 条目进度与当前文件名、可取消）、整组下载（相册 + 评论区）、受保护消息 `.no-forwards` 文字复制解锁、五语 i18n。<br>仓库侧加固：`@match` 严格限定 + 运行时域名守卫，无任何推广 / 邀请 / 统计外链。Telegram 下载脚本**只装这一个**。<br>显示名：`Telegram Media Downloader (Merged)` |
+| [`get-microsoft-rewards.user.js`](browser/get-microsoft-rewards.user.js) | 1.2.1 | 微软 Rewards 自动助手：本地自动搜索、每日活动、自动签到、阅读任务。多区域兼容与卡片过滤逻辑优化；**业务日期按 PT 计算**（修正与接口 UTC 日期差 8 小时、取不到当天任务的问题），每日任务批次按业务日挑选、缺失时回退到最近一批且不并入历史、不取未来批次；**浮动图标可拖拽（不记忆位置，刷新回右下角）、边缘自动避让、双击标题栏复位**，展开后标题栏也可拖，内容超长时面板内部滚动。<br>显示名：`Get Microsoft Rewards (修复/增强版)` |
+| [`telegram-media-downloader-merged.user.js`](browser/telegram-media-downloader-merged.user.js) | 1.2.1 | 从限制下载的 Telegram 频道获取图片 / 视频 / 语音 / 文件。**旧 `telegram-only` 与 `Telegram-Media-Downloader-Pro` 的合并版**：WebA(webz) + WebK(webk) 双端挂载、原生 `downloadToDisc` 通道优先；**默认不弹目录选择框，文件直接落系统下载目录**（可选指定归档目录）、任务面板（标题栏可拖动、位置记忆、双击复位、取消 / 重试 / 续传 / 4 MB 分片）、右键菜单下载、选择栏批量下载（面板显示 `n/N` 条目进度与当前文件名、可取消）、整组下载（相册 + 评论区）、受保护消息 `.no-forwards` 文字复制解锁、五语 i18n。<br>仓库侧加固：`@match` 严格限定 + 运行时域名守卫，无任何推广 / 邀请 / 统计外链。Telegram 下载脚本**只装这一个**。<br>显示名：`Telegram Media Downloader (Merged)` |
 
 ### 常见问题
 
@@ -78,6 +78,7 @@ https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-medi
 
 | 日期 | 变更 | 对已装用户的影响 |
 | --- | --- | --- |
+| 2026-11 | **发布源从 `lytree/GMScript` 迁到本仓库 `scripts/browser/`**：脚本身份（`@name` / `@namespace`）未动，但 `@updateURL` / `@downloadURL` 改指 `raw.githubusercontent.com/lytree/script/main/scripts/browser/...`（v1.2.1） | 老用户本机副本仍指向 GMScript → **用上方地址重装一次**才会接上新的更新链路；GMScript 侧 `userscripts/` 已冻结，不再推送新版 |
 | 2026-11 | 下线 `wps-auto-signin.user.js`（WPS Auto Sign-in 自动签到 v1.0.0），连同 `userscripts/tests/` 下两份测试 | raw 地址现已 404，**不再收到自动更新**；需在脚本管理器里手动停用 / 卸载。仓库不再维护该功能 |
 | 2026-10 | 脚本从仓库根目录移入 `userscripts/`，raw 地址随之改变（脚本内 `@updateURL` / `@downloadURL` 已同步） | 本机已装副本仍指向旧地址 → **重新安装一次**即可恢复自动更新；根目录旧地址已失效 |
 | 2026-10 | 删除 `telegram-media-downloader.telegram-only.user.js`（v1.0.7），功能并入 `telegram-media-downloader-merged.user.js`（v1.2.0） | 两者 `@name` / `@namespace` 不同，管理器视为两个脚本 → **必须先卸载旧版**再装合并版，否则媒体查看器出现两个下载按钮；旧地址已 404，不会自动更新 |
@@ -91,15 +92,15 @@ https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-medi
 5. **脚本显示名可以保留中文**（如 `@name:zh-CN`），它与文件名各自独立，互不影响。
 6. **移动 / 重命名文件必须同步改 `@updateURL` 与 `@downloadURL`**，并预先告知用户重新安装 —— 否则自动更新链路会静默断掉。这类变更同时登记到上方[「变更记录」](#变更记录)。
 
-### 发布流程（原 GMScript，归档保留）
+### 发布流程
 
-1. 修改 `browser/*.user.js`（对应原仓库 `userscripts/*.user.js`），递增 `@version`。
+1. 修改 `browser/*.user.js`，递增 `@version`。
 2. `git add -A && git commit -m "..." && git push`（或直接在 GitHub 网页上传覆盖同名文件）。
 3. 若本次改动会**影响已安装用户**（下线、改名、移动文件、改 `@namespace`），在「变更记录」补一行 —— 写清用户**要做什么**，而不只是改了哪些代码。
 4. **推送后校验 raw 地址返回 200**，确认更新链路通顺：
 
    ```bash
-   curl -sI https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/get-microsoft-rewards.user.js | head -1
+   curl -sI https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js | head -1
    ```
 
 > 注意：重命名或移动文件时，GitHub 上必须同步操作，且脚本内的 `@updateURL` / `@downloadURL` 要一并更新，

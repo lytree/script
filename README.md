@@ -36,9 +36,9 @@ dotnet run src/search/btsou.cs -- list
 
 ## 迁移脚本说明
 
-`scripts/` 下的内容原属 `lytree/GMScript`，迁入时做了分类整理，但**没有改脚本内容**：
+`scripts/` 下的内容原属 `lytree/GMScript`，迁入时做了分类整理：
 
-- 油猴脚本的 `@updateURL` / `@downloadURL` 仍指向原仓库的 raw 地址，安装和自动更新请继续用 [`scripts/README.md`](scripts/README.md) 中的原链接；本仓库副本只作归档与二次开发基线。
+- **油猴脚本的发布源已迁到本仓库**：v1.2.1 起 `@updateURL` / `@downloadURL` 指向 `raw.githubusercontent.com/lytree/script/main/scripts/browser/...`，安装与自动更新都用 [`scripts/README.md`](scripts/README.md) 中的地址。老用户需重装一次才能接上新链路，旧 GMScript 仓库已冻结。
 - 第三方镜像不是安装源，升级走各自上游；详见 [`scripts/third-party/README.md`](scripts/third-party/README.md)。
 - Windows 脚本的可执行入口见 [`scripts/windows/README.md`](scripts/windows/README.md)。
 

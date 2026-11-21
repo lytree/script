@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Get Microsoft Rewards (修复/增强版)
 // @namespace    https://github.com/lytree/GMScript
-// @version      1.2.0
+// @version      1.2.1
 // @description  微软 Rewards 自动助手：集成本地自动搜索、每日活动与自动签到。业务日期按太平洋时间（PT）计算，修正与接口 UTC 日期差 8 小时导致的取不到当天任务；面板图标可拖拽、双击复位。
 // @author       lytree (二次开发); 原作者 Muverix / 基于 QingJ《Get Microsoft Rewards》
 // @license      MIT
 // @icon         https://rewards.bing.com/rewardscdn/images/rewards.png
-// @homepage     https://github.com/lytree/GMScript
-// @supportURL   https://github.com/lytree/GMScript/issues
+// @homepage     https://github.com/lytree/script
+// @supportURL   https://github.com/lytree/script/issues
 // @source       https://github.com/Muverix/Get-Microsoft-Rewards
 // @original-author Muverix
 // @original-source https://github.com/Muverix/Get-Microsoft-Rewards
@@ -35,8 +35,8 @@
 // @connect      hotapi.nntool.cc
 // @connect      cnxiaobai.com
 // @run-at       document-end
-// @downloadURL  https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/get-microsoft-rewards.user.js
-// @updateURL    https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/get-microsoft-rewards.user.js
+// @downloadURL  https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js
+// @updateURL    https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js
 // ==/UserScript==
 
 /* =========================================================================
@@ -49,7 +49,7 @@
  *
  * 🔗 相关项目链接 (Fork & Original Sources)
  * -------------------------------------------------------------------------
- * - 本仓库（二次开发 / Fork）：    https://github.com/lytree/GMScript
+ * - 本仓库（二次开发 / Fork）：    https://github.com/lytree/script
  * - 原作者 Muverix 的项目仓库：    https://github.com/Muverix/Get-Microsoft-Rewards
  * - 上游 QingJ 原版项目：          https://github.com/QingJ/Get-Microsoft-Rewards
  * - 参考项目 liyan20001124-byte：  https://github.com/liyan20001124-byte/Microsoft-Rewards-Script

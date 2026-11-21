@@ -4,7 +4,7 @@
 // @name:zh-TW   Telegram 媒體下載器（合併增強版）
 // @name:ru      Telegram Media Downloader (Merged)
 // @name:my      Telegram Media Downloader (Merged)
-// @version      1.2.0
+// @version      1.2.1
 // @namespace    gmscript-telegram-media-downloader
 // @description        Download images, videos, voice messages and files from Telegram Web — including restricted "no-forward" chats. Batch-save selected media, cancel/retry/resume downloads from a progress panel, and copy text from protected messages.
 // @description:zh-CN  从 Telegram 网页版下载图片、视频、语音与文件（含禁止转发的受限频道）。支持批量保存所选媒体、可取消/重试/续传的下载面板，并恢复受保护消息的文字复制。
@@ -13,8 +13,8 @@
 // @description:my     Telegram ဝဘ်မှ ပုံ၊ ဗီဒီယို၊ အသံနှင့် ဖိုင်များကို ဒေါင်းလုဒ်လုပ်ပါ (ပြန်ပို့မရသော ကန့်သတ်ချက်ရှိ ချန်နယ်များအပါအဝင်)။ ရွေးချယ်ထားသော မီဒီယာများကို အစုလိုက် သိမ်းဆည်းနိုင်ပြီး ဒေါင်းလုဒ်ကို ပယ်ဖျက်/ထပ်စမ်း/ဆက်လုပ်နိုင်သည်။
 // @author       Nestor Qin, Andrew, yoshiko.wisoky, copyMister — merged
 // @license      GNU GPLv3
-// @homepage     https://github.com/lytree/GMScript
-// @supportURL   https://github.com/lytree/GMScript/issues
+// @homepage     https://github.com/lytree/script
+// @supportURL   https://github.com/lytree/script/issues
 // @match        https://web.telegram.org/*
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
@@ -22,8 +22,8 @@
 // @grant        unsafeWindow
 // @noframes
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-media-downloader-merged.user.js
-// @updateURL    https://raw.githubusercontent.com/lytree/GMScript/main/userscripts/telegram-media-downloader-merged.user.js
+// @downloadURL  https://raw.githubusercontent.com/lytree/script/main/scripts/browser/telegram-media-downloader-merged.user.js
+// @updateURL    https://raw.githubusercontent.com/lytree/script/main/scripts/browser/telegram-media-downloader-merged.user.js
 // ==/UserScript==
 
 /*
