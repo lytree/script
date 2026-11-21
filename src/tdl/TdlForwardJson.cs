@@ -22,27 +22,34 @@
 // ============================================================================
 // TdlForwardJson.cs — 读取标签导出 JSON, 将消息按相册分组转发到指定聊天/话题
 //
-// 数据来源: src/crawler/TelegramChannelExport.cs --split-by-tag 生成的按标签 JSON
+// 数据来源: src/crawler/TelegramChannelExport.cs --split-by-tag 生成的按标签 JSON,
+//          或 --search-tag 直接从源聊天历史中扫描 #标签 (适用于未开启网页预览的频道)
 // 转发方式: 通过 TDLib 深拷贝源频道消息 (sendCopy), 相册按 MediaAlbumId 分组,
 //          可选连同评论区一起转发到目标论坛话题。
 //
 // 用法:
 //   dotnet run src/tdl/TdlForwardJson.cs -- --json <标签JSON> [选项]
 //   dotnet run src/tdl/TdlForwardJson.cs -- --dir <作者目录> [选项]
+//   dotnet run src/tdl/TdlForwardJson.cs -- --source <源聊天> --search-tag <标签> [选项]
 //
 // 选项:
-//   --json      单个标签 JSON 路径 (与 --dir 二选一)
+//   --json      单个标签 JSON 路径 (与 --dir / --search-tag 三选一)
 //   --dir       按作者拆分的目录, 全部文件统一转发到 --topic 指定话题, 不存在则新建 (跳过 index.json)
+//   --source    源聊天链接/用户名 (仅 --search-tag 模式使用)
+//   --search-tag  直接从源聊天历史中扫描带 #标签 的消息并转发 (无需导出 JSON)
+//   --limit     仅 --search-tag 模式: 最多扫描最近 N 条消息, 0=全部 (默认 0)
 //   --per-file-topic  配合 --dir, 每个文件以文件名(去扩展名)作为独立话题, 忽略 --topic
 //   --target    目标链接, 默认 https://t.me/+CDfEHAp_CuNiYjQ1 (邀请链接)
 //               t.me/c/<群组内部id>/<话题消息id> 形式会直接按话题消息 ID 解析
-//   --topic     目标话题名称 (--json 默认用文件名; --dir 默认取目录名去掉 _by_author)
+//   --topic     目标话题名称 (--json 默认用文件名; --dir 默认取目录名去掉 _by_author;
+//               --search-tag 默认用标签名)
 //   --comments  是否转发评论 (默认 true)
 //   --dry-run   只检查分组/评论数量/话题是否存在, 不实际转发也不新建话题
 //
 // 示例:
 //   dotnet run src/tdl/TdlForwardJson.cs -- --json output/telegram/sourpuss1988_8885_latest_by_tag/素人.json --topic 素人
 //   dotnet run src/tdl/TdlForwardJson.cs -- --dir output/telegram/sourpuss1988_8885_latest_by_tag/推特_by_author --topic 推特
+//   dotnet run src/tdl/TdlForwardJson.cs -- --source t.me/phzwww --search-tag 小桃酱 --target https://t.me/+zoyDgQeYjRNkMjE1 --topic 小桃酱
 // ============================================================================
 
 using System.CommandLine;
@@ -66,6 +73,9 @@ async Task<int> Main(TdClient client, string[] args)
 
     var optJson = new Option<string?>("--json") { Description = "单个标签导出 JSON 路径" };
     var optDir = new Option<string?>("--dir") { Description = "按作者拆分的目录, 每个文件转发到同名话题" };
+    var optSource = new Option<string?>("--source") { Description = "源聊天链接/用户名 (仅 --search-tag 模式)" };
+    var optSearchTag = new Option<string?>("--search-tag") { Description = "直接从源聊天历史中扫描 #标签 并转发" };
+    var optLimit = new Option<int>("--limit") { DefaultValueFactory = _ => 0, Description = "--search-tag 模式最多扫描最近 N 条消息, 0=全部" };
     var optTarget = new Option<string>("--target")
     {
         DefaultValueFactory = _ => "https://t.me/+CDfEHAp_CuNiYjQ1",
@@ -84,6 +94,9 @@ async Task<int> Main(TdClient client, string[] args)
     var root = new RootCommand("读取标签 JSON, 将消息按相册分组转发到指定聊天/话题");
     root.Options.Add(optJson);
     root.Options.Add(optDir);
+    root.Options.Add(optSource);
+    root.Options.Add(optSearchTag);
+    root.Options.Add(optLimit);
     root.Options.Add(optTarget);
     root.Options.Add(optTopic);
     root.Options.Add(optComments);
@@ -95,6 +108,9 @@ async Task<int> Main(TdClient client, string[] args)
     {
         string? jsonPath = parseResult.GetValue(optJson);
         string? dirPath = parseResult.GetValue(optDir);
+        string? sourceLink = parseResult.GetValue(optSource);
+        string? searchTag = parseResult.GetValue(optSearchTag);
+        int searchLimit = Math.Max(0, parseResult.GetValue(optLimit));
         string targetLink = parseResult.GetValue(optTarget)!;
         string topicName = parseResult.GetValue(optTopic)!;
         bool forwardComments = parseResult.GetValue(optComments);
@@ -102,9 +118,20 @@ async Task<int> Main(TdClient client, string[] args)
         bool dryRun = parseResult.GetValue(optDryRun);
         int? deleteTopicId = parseResult.GetValue(optDeleteTopic);
 
-        if (deleteTopicId == null && (jsonPath == null) == (dirPath == null))
+        bool searchMode = !string.IsNullOrWhiteSpace(searchTag);
+        if (deleteTopicId == null)
         {
-            logger.ZLogError($"必须且只能指定 --json 或 --dir 之一");
+            int modes = (jsonPath != null ? 1 : 0) + (dirPath != null ? 1 : 0) + (searchMode ? 1 : 0);
+            if (modes != 1)
+            {
+                logger.ZLogError($"--json / --dir / --search-tag 必须且只能指定一个");
+                return 2;
+            }
+        }
+
+        if (searchMode && string.IsNullOrWhiteSpace(sourceLink))
+        {
+            logger.ZLogError($"--search-tag 模式必须指定 --source");
             return 2;
         }
 
@@ -128,7 +155,7 @@ async Task<int> Main(TdClient client, string[] args)
                 : topicName.Trim();
             jobs.Add((jsonPath, singleTopic));
         }
-        else if (deleteTopicId == null)
+        else if (deleteTopicId == null && dirPath != null)
         {
             if (!Directory.Exists(dirPath))
             {
@@ -174,7 +201,14 @@ async Task<int> Main(TdClient client, string[] args)
             }
         }
 
-        logger.ZLogInformation($"待处理 {jobs.Count} 个文件");
+        if (searchMode)
+        {
+            logger.ZLogInformation($"待扫描源聊天 [[{sourceLink}]] 中的 #{searchTag!.Trim().TrimStart('#')}");
+        }
+        else
+        {
+            logger.ZLogInformation($"待处理 {jobs.Count} 个文件");
+        }
 
         string tdlRoot = TdlEnv.InitTdlRoot(logger);
         var service = new TdlForwardService(client, logger, tdlRoot);
@@ -215,6 +249,59 @@ async Task<int> Main(TdClient client, string[] args)
         int succeeded = 0;
         int failed = 0;
         int totalForwarded = 0;
+
+        if (searchMode)
+        {
+            string tag = searchTag!.Trim();
+            string jobTopicName = string.IsNullOrWhiteSpace(topicName) ? tag.TrimStart('#') : topicName.Trim();
+
+            long sourceChatId = await service.ResolveTargetLinkAsync(sourceLink!);
+            if (sourceChatId == 0)
+            {
+                logger.ZLogError($"无法解析源聊天: {sourceLink}");
+                return 1;
+            }
+
+            var sourceChat = await client.GetChatAsync(sourceChatId);
+            logger.ZLogInformation($"源频道: [[{sourceChat.Title}]] ChatId={sourceChatId}");
+
+            var sourceMessageIds = await ScanMessagesByTagAsync(client, sourceChatId, tag, searchLimit, logger, ct);
+            if (sourceMessageIds.Count == 0)
+            {
+                logger.ZLogWarning($"源聊天中没有找到 #{tag.TrimStart('#')} 的消息");
+                return 1;
+            }
+
+            if (dryRun)
+            {
+                var messages = await service.LoadMessagesWithAlbumsAsync(sourceChatId, sourceMessageIds);
+                PrintGroups(messages, sourceMessageIds, logger);
+
+                bool exists = topicCache != null
+                    ? topicCache.ContainsKey(jobTopicName.Trim())
+                    : fixedTopic != null;
+                logger.ZLogInformation($"话题 [[{jobTopicName}]]: {(exists ? "已存在" : "不存在(将新建)")}");
+                return 0;
+            }
+
+            TdApi.MessageTopic? topic = fixedTopic != null
+                ? fixedTopic
+                : await FindOrCreateTopicAsync(client, targetChatId, jobTopicName, topicCache!, logger);
+
+            if (topic == null)
+            {
+                return 1;
+            }
+
+            using var db = new ForwardDbContext(BuildDbPath(dataDir, sourceChatId, jobTopicName));
+            await db.Database.EnsureCreatedAsync(ct);
+
+            int forwarded = await service.ForwardMessagesByIdsAsync(
+                db, sourceChatId, targetChatId, sourceMessageIds, topic, forwardComments);
+
+            logger.ZLogInformation($"全部结束: 话题 [[{jobTopicName}]], 共转发 {forwarded} 条消息 (转发评论: {forwardComments})");
+            return 0;
+        }
 
         foreach (var (file, jobTopicName) in jobs)
         {
@@ -429,6 +516,89 @@ async Task<(long chatId, List<long> messageIds)> ResolveMessagesAsync(
     }
 
     return (chatId, ids.Distinct().OrderBy(id => id).ToList());
+}
+
+async Task<List<long>> ScanMessagesByTagAsync(
+    TdClient client, long chatId, string tag, int limit, ILogger logger, CancellationToken ct)
+{
+    string needle = "#" + tag.Trim().TrimStart('#');
+    var ids = new List<long>();
+    long fromMessageId = 0;
+    int scanned = 0;
+    int stalled = 0;
+
+    for (int page = 0; page < 5000; page++)
+    {
+        TdApi.Messages history;
+        try
+        {
+            history = await client.GetChatHistoryAsync(chatId, fromMessageId, 0, 100, false);
+        }
+        catch (TdException ex) when (ex.Error.Code == 429)
+        {
+            int retryAfter = TdlEnv.ParseRetryAfter(ex);
+            logger.ZLogWarning($"读取历史触发频率限制, 等待 {retryAfter} 秒...");
+            await Task.Delay(retryAfter * 1000, ct);
+            continue;
+        }
+
+        var messages = history.Messages_ ?? [];
+        if (messages.Length == 0)
+        {
+            // 刚加入频道时服务端历史可能尚未就绪, 短暂重试
+            if (stalled++ < 3)
+            {
+                await Task.Delay(2000, ct);
+                continue;
+            }
+            break;
+        }
+
+        foreach (var message in messages)
+        {
+            scanned++;
+            if (GetMessageText(message.Content)?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                ids.Add(message.Id);
+            }
+        }
+
+        if (limit > 0 && scanned >= limit) break;
+
+        long oldestId = messages.Min(m => m.Id);
+        if (oldestId == fromMessageId || oldestId <= 1)
+        {
+            if (stalled++ < 3)
+            {
+                await Task.Delay(2000, ct);
+                continue;
+            }
+            break;
+        }
+
+        stalled = 0;
+        fromMessageId = oldestId;
+        await Task.Delay(300, ct);
+    }
+
+    var ordered = ids.Distinct().OrderBy(id => id).ToList();
+    logger.ZLogInformation($"扫描 {scanned} 条消息, 匹配 {needle} 的 {ordered.Count} 条");
+    return ordered;
+}
+
+string? GetMessageText(TdApi.MessageContent? content)
+{
+    return content switch
+    {
+        TdApi.MessageContent.MessageText t => t.Text?.Text,
+        TdApi.MessageContent.MessagePhoto p => p.Caption?.Text,
+        TdApi.MessageContent.MessageVideo v => v.Caption?.Text,
+        TdApi.MessageContent.MessageAudio a => a.Caption?.Text,
+        TdApi.MessageContent.MessageDocument d => d.Caption?.Text,
+        TdApi.MessageContent.MessageVoiceNote vn => vn.Caption?.Text,
+        TdApi.MessageContent.MessageAnimation ani => ani.Caption?.Text,
+        _ => null
+    };
 }
 
 string BuildDbPath(string dataDir, long sourceChatId, string topicName)

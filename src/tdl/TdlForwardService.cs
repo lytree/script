@@ -286,6 +286,7 @@ public class TdlForwardService
                 // 新版 TDLib 的频道消息 ID 带 2^20 位移, 相册成员 ID 相差一个步长
                 var candidates = Enumerable.Range(-9, 19)
                     .Select(k => anchor.Id + k * messageIdStep)
+                    .Where(id => id > 0)
                     .ToArray();
                 var albumMessages = await _client.GetMessagesAsync(chatId, candidates);
                 foreach (var msg in albumMessages.Messages_ ?? [])
@@ -609,16 +610,28 @@ public class TdlForwardService
                 var allComments = new List<TdApi.Message>();
                 long fromMsgId = 0;
                 bool hasMore = true;
+                int expectedCount = replyInfo?.ReplyCount ?? 0;
 
                 while (hasMore)
                 {
-                    var page = await _client.GetMessageThreadHistoryAsync(
-                        chatId: sourceChatId,
-                        messageId: sourceMsg.Id,
-                        fromMessageId: fromMsgId,
-                        offset: 0,
-                        limit: 100
-                    );
+                    TdApi.Messages page;
+                    try
+                    {
+                        page = await _client.GetMessageThreadHistoryAsync(
+                            chatId: sourceChatId,
+                            messageId: sourceMsg.Id,
+                            fromMessageId: fromMsgId,
+                            offset: 0,
+                            limit: 100
+                        );
+                    }
+                    catch (TdException ex) when (IsCommentThreadEnd(ex))
+                    {
+                        // TDLib 在评论区已取完时, 对空页返回 500 "Receive messages in an unexpected chat"
+                        // (MessagesManager::get_message_thread_history 的 dialog 校验), 视为评论区结束
+                        _logger.ZLogDebug($"评论区已到末尾: MsgId={sourceMsg.Id}");
+                        break;
+                    }
 
                     if (page.Messages_ == null || page.Messages_.Length == 0)
                     {
@@ -628,7 +641,8 @@ public class TdlForwardService
 
                     allComments.AddRange(page.Messages_);
 
-                    if (page.Messages_.Length < 100)
+                    // 已取到的条数达到 ReplyCount 时无需再翻页, 否则会对空页触发上述 500 错误
+                    if (page.Messages_.Length < 100 || (expectedCount > 0 && allComments.Count >= expectedCount))
                     {
                         hasMore = false;
                     }
@@ -736,6 +750,14 @@ public class TdlForwardService
             }
         }
     }
+
+    /// <summary>
+    /// 判断是否为"评论区已取完"的伪错误。
+    /// TDLib 拉取频道评论时, 若下一页为空页会返回 500 "Receive messages in an unexpected chat"。
+    /// </summary>
+    static bool IsCommentThreadEnd(TdException ex)
+        => ex.Error?.Code == 500
+            && (ex.Error.Message?.Contains("unexpected chat", StringComparison.OrdinalIgnoreCase) ?? false);
 
     async Task<(List<long> toForward, List<long> skipped)> FilterAlreadyForwarded(ForwardDbContext db, long sourceChatId, long targetChatId, List<TdApi.Message> group)
     {
