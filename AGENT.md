@@ -59,6 +59,11 @@ script/
 │   ├── Avalonia/          #   GUI 实验（含 .fsx）
 │   └── Helper/            #   Bytes / DateTime / Images / Json / Plot，被大量 #:include
 │
+├── scripts/               # 从 lytree/GMScript 迁移来的脚本归档（见 scripts/README.md）
+│   ├── browser/           #   2 个自维护油猴脚本
+│   ├── windows/           #   9 个 Windows 配置脚本（.ps1 / .bat / .cmd）
+│   └── third-party/       #   6 个上游镜像 + manifest / SOURCES / sync.mjs
+│
 ├── data/                  # 运行时数据（1220 jpg / 361 mp4），不是代码
 ├── models/                # onnx / mnn / pth 模型文件
 ├── lib/                   # 共享绘图代码 + 字体

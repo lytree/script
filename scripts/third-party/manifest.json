@@ -1,0 +1,144 @@
+{
+  "note": "README「关联脚本」中列出的第三方脚本的本地只读镜像。文件内容不做任何修改；安装请用 README 里的上游地址，不要据此清单重新分发。",
+  "syncedAt": "2026-11-14",
+  "scripts": [
+    {
+      "id": "github-enhanced",
+      "name": "Github 增强 · 高速下载",
+      "repo": "XIU2/UserScript",
+      "license": "GPL-3.0",
+      "file": "github-enhanced.user.js",
+      "upstreamFile": "GithubEnhanced-High-Speed-Download.user.js",
+      "version": "2.6.41",
+      "url": "https://raw.githubusercontent.com/XIU2/UserScript/master/GithubEnhanced-High-Speed-Download.user.js",
+      "alternates": [
+        "https://bitbucket.org/xiu2/userscript/raw/master/GithubEnhanced-High-Speed-Download.user.js"
+      ],
+      "size": 42732,
+      "sha256": "ed1af2d710d5207c042dc83714c10fd91b94fd868f105fe33644f1282ee2b0d2",
+      "source": {
+        "refType": "branch",
+        "ref": "master",
+        "commit": "7e93aceb592a613d499ed21b3e9886377e31fba0",
+        "committedAt": "2026-09-05T05:22:01Z",
+        "resolvedUrl": "https://raw.githubusercontent.com/XIU2/UserScript/master/GithubEnhanced-High-Speed-Download.user.js",
+        "fetchedAt": "2026-11-04T12:10:42.692Z"
+      }
+    },
+    {
+      "id": "zhihu-beautification",
+      "name": "知乎美化",
+      "repo": "XIU2/UserScript",
+      "license": "GPL-3.0",
+      "file": "zhihu-beautification.user.js",
+      "upstreamFile": "Zhihu-Beautification.user.js",
+      "version": "1.5.24",
+      "url": "https://raw.githubusercontent.com/XIU2/UserScript/master/Zhihu-Beautification.user.js",
+      "alternates": [
+        "https://bitbucket.org/xiu2/userscript/raw/master/Zhihu-Beautification.user.js"
+      ],
+      "size": 45618,
+      "sha256": "244856860dd9cfbc8495c077c9f875f473d4a0fd665a32fabc52a3aad751e0e6",
+      "source": {
+        "refType": "branch",
+        "ref": "master",
+        "commit": "8fa9899f112f59d5cbe1513b058e1415936c2dcd",
+        "committedAt": "2026-07-30T07:04:22Z",
+        "resolvedUrl": "https://raw.githubusercontent.com/XIU2/UserScript/master/Zhihu-Beautification.user.js",
+        "fetchedAt": "2026-11-04T12:10:43.436Z"
+      }
+    },
+    {
+      "id": "zhihu-enhanced",
+      "name": "知乎增强",
+      "repo": "XIU2/UserScript",
+      "license": "GPL-3.0",
+      "file": "zhihu-enhanced.user.js",
+      "upstreamFile": "Zhihu-Enhanced.user.js",
+      "version": "2.3.32",
+      "url": "https://raw.githubusercontent.com/XIU2/UserScript/master/Zhihu-Enhanced.user.js",
+      "alternates": [
+        "https://bitbucket.org/xiu2/userscript/raw/master/Zhihu-Enhanced.user.js"
+      ],
+      "size": 114600,
+      "sha256": "17949f9d51e05d9d1133d5384bdea28df76dd000b28d474244d6767dde6aab60",
+      "source": {
+        "refType": "branch",
+        "ref": "master",
+        "commit": "77b9f742b2c291b2908bd092a1805783e78747d7",
+        "committedAt": "2026-08-05T08:34:36Z",
+        "resolvedUrl": "https://raw.githubusercontent.com/XIU2/UserScript/master/Zhihu-Enhanced.user.js",
+        "fetchedAt": "2026-11-04T12:10:45.321Z"
+      }
+    },
+    {
+      "id": "ferrylink",
+      "name": "网盘直链下载助手（FerryLink）",
+      "repo": "Wjavan/FerryLink",
+      "license": "GPL-3.0",
+      "file": "ferrylink.user.js",
+      "upstreamFile": "网盘直链下载助手.user.js",
+      "version": "1.6.5",
+      "url": "https://raw.githubusercontent.com/Wjavan/FerryLink/main/%E7%BD%91%E7%9B%98%E7%9B%B4%E9%93%BE%E4%B8%8B%E8%BD%BD%E5%8A%A9%E6%89%8B.user.js",
+      "alternates": [
+        "https://cdn.jsdelivr.net/gh/Wjavan/FerryLink@main/%E7%BD%91%E7%9B%98%E7%9B%B4%E9%93%BE%E4%B8%8B%E8%BD%BD%E5%8A%A9%E6%89%8B.user.js"
+      ],
+      "size": 274384,
+      "sha256": "b79a1733bb581f9acc898a7879926ef2b19b5421ae68183a67e7f031129de689",
+      "source": {
+        "refType": "branch",
+        "ref": "main",
+        "commit": "6118324d70b8130e1ba140871df6cf7cfc051940",
+        "committedAt": "2026-11-13T14:59:28Z",
+        "resolvedUrl": "https://raw.githubusercontent.com/Wjavan/FerryLink/main/%E7%BD%91%E7%9B%98%E7%9B%B4%E9%93%BE%E4%B8%8B%E8%BD%BD%E5%8A%A9%E6%89%8B.user.js",
+        "fetchedAt": "2026-11-14T03:01:34.586Z"
+      }
+    },
+    {
+      "id": "douyin-dl",
+      "name": "抖音下载",
+      "repo": "zhzLuke96/douyin-dl-user-js",
+      "license": "MIT",
+      "file": "douyin-dl.user.js",
+      "upstreamFile": "dy-dl.user.js",
+      "version": "1.5.15",
+      "url": "https://github.com/zhzLuke96/douyin-dl-user-js/releases/download/v1.5.15/dy-dl.user.js",
+      "alternates": [
+        "https://gh-proxy.com/https://github.com/zhzLuke96/douyin-dl-user-js/releases/download/v1.5.15/dy-dl.user.js"
+      ],
+      "size": 276905,
+      "sha256": "29ee1002bae3cc8911ec334a19da454aeb1cbfa43cb5d751cd16213d2bd31d1b",
+      "source": {
+        "refType": "release",
+        "ref": "v1.5.15",
+        "commit": "721d14f9c66a44ceb40dbf702f3d38a1ff2c0366",
+        "committedAt": "2026-09-09T20:04:57Z",
+        "resolvedUrl": "https://github.com/zhzLuke96/douyin-dl-user-js/releases/download/v1.5.15/dy-dl.user.js",
+        "fetchedAt": "2026-11-04T12:11:00.582Z"
+      }
+    },
+    {
+      "id": "betterx",
+      "name": "更好的 X（BetterX）",
+      "repo": "Iskongkongyo/BetterX",
+      "license": "MIT",
+      "file": "betterx.user.js",
+      "upstreamFile": "BetterX-v4.0.0.js",
+      "version": "4.0.0",
+      "url": "https://github.com/Iskongkongyo/BetterX/releases/download/v4.0.0/BetterX-v4.0.0.js",
+      "alternates": [
+        "https://gh-proxy.com/https://github.com/Iskongkongyo/BetterX/releases/download/v4.0.0/BetterX-v4.0.0.js"
+      ],
+      "size": 526877,
+      "sha256": "f2821082acd6d9b2346d8143e2c76c4ea1cd9e980291cc0149db639bcc45788f",
+      "source": {
+        "refType": "release",
+        "ref": "v4.0.0",
+        "commit": "1770501a575752f5c412db475184545246c9935b",
+        "committedAt": "2026-10-24T07:56:49Z",
+        "resolvedUrl": "https://github.com/Iskongkongyo/BetterX/releases/download/v4.0.0/BetterX-v4.0.0.js",
+        "fetchedAt": "2026-11-04T12:11:29.552Z"
+      }
+    }
+  ]
+}

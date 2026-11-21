@@ -380,3 +380,6 @@ output.bmp
 
 # 登录凭证目录（login.cs 写入 accessToken / refreshToken），禁止入库
 **/auths/
+
+# 迁移自 GMScript 的本机专用脚本（含个人镜像路径 / 用户名），不入库
+scripts/windows/*kali*.ps1
