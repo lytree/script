@@ -1,4 +1,4 @@
-<!-- 由 scripts/third-party/sync.mjs 生成，请勿手工编辑。 -->
+<!-- 由 third-party/sync.mjs 生成，请勿手工编辑。 -->
 
 # 镜像来源
 

@@ -2,10 +2,10 @@
 /**
  * 同步 README「关联脚本」中列出的第三方脚本到本地只读镜像，并记录来源。
  *
- *   node scripts/third-party/sync.mjs              # 下载 + 采集上游 commit + 更新 manifest
- *   node scripts/third-party/sync.mjs --check      # 只比对，不写盘；有差异退出码 1
- *   node scripts/third-party/sync.mjs --report     # 打印当前镜像的来源表（Markdown）
- *   node scripts/third-party/sync.mjs --only=betterx --only=douyin-dl
+ *   node third-party/sync.mjs              # 下载 + 采集上游 commit + 更新 manifest
+ *   node third-party/sync.mjs --check      # 只比对，不写盘；有差异退出码 1
+ *   node third-party/sync.mjs --report     # 打印当前镜像的来源表（Markdown）
+ *   node third-party/sync.mjs --only=betterx --only=douyin-dl
  *
  * 依赖：Node 18+ 内置 fetch，无第三方依赖。GitHub API 走未认证调用（每小时 60 次，
  * 六个脚本一次同步约 6 次）；限流或离线时只降级为"记版本不记 commit"，不影响同步。
@@ -259,7 +259,7 @@ if (!checkOnly && dirty) {
 /* 来源表：与 manifest 同源生成，避免手工维护的第二份清单漂移 */
 if (!checkOnly) {
   const sourcesMd = [
-    "<!-- 由 scripts/third-party/sync.mjs 生成，请勿手工编辑。 -->",
+    "<!-- 由 third-party/sync.mjs 生成，请勿手工编辑。 -->",
     "",
     "# 镜像来源",
     "",

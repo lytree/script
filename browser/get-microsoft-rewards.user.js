@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Get Microsoft Rewards (修复/增强版)
 // @namespace    https://github.com/lytree/GMScript
-// @version      1.2.1
+// @version      1.2.2
 // @description  微软 Rewards 自动助手：集成本地自动搜索、每日活动与自动签到。业务日期按太平洋时间（PT）计算，修正与接口 UTC 日期差 8 小时导致的取不到当天任务；面板图标可拖拽、双击复位。
 // @author       lytree (二次开发); 原作者 Muverix / 基于 QingJ《Get Microsoft Rewards》
 // @license      MIT
@@ -35,8 +35,8 @@
 // @connect      hotapi.nntool.cc
 // @connect      cnxiaobai.com
 // @run-at       document-end
-// @downloadURL  https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js
-// @updateURL    https://raw.githubusercontent.com/lytree/script/main/scripts/browser/get-microsoft-rewards.user.js
+// @downloadURL  https://raw.githubusercontent.com/lytree/script/main/browser/get-microsoft-rewards.user.js
+// @updateURL    https://raw.githubusercontent.com/lytree/script/main/browser/get-microsoft-rewards.user.js
 // ==/UserScript==
 
 /* =========================================================================

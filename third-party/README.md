@@ -1,12 +1,12 @@
 # third-party —— 上游脚本的本地只读镜像
 
-[`scripts/README.md`](../README.md) 的「关联脚本（上游，非本仓库维护）」一节列出的第三方脚本，在这里各存一份**原样副本**。
+[`README.md`](../README.md) 的「关联脚本（上游，非本仓库维护）」一节列出的第三方脚本，在这里各存一份**原样副本**。
 
 存在的原因很简单：上游随时可能删仓库、改名、被墙，而 README 里那些说明（版本号、`@namespace`、`@updateURL` 指向哪里）需要有据可查。有了副本，这些判断可以随时本地复核，而不是靠记忆。
 
 ## 这不是安装源
 
-- **不要**从本目录安装脚本，也不要把它当 `@updateURL` 用。安装地址见`scripts/README.md`，升级由上游推送。
+- **不要**从本目录安装脚本，也不要把它当 `@updateURL` 用。安装地址见仓库根目录 `README.md`，升级由上游推送。
 - **不要**在这里改代码。镜像一旦本地修改，下次 `sync` 就会被覆盖，而且你会在"这脚本到底是谁的行为"上彻底失去判断。
 - 本目录**不随本仓库的 MIT 许可证发布**，各文件仍归各自作者，许可证见下表与文件内 header。
 
@@ -27,13 +27,13 @@
 
 ```bash
 # 下载并更新镜像 + manifest（sha256 / 大小 / 日期会一并刷新）
-node scripts/third-party/sync.mjs
+node third-party/sync.mjs
 
 # 只比对，不写盘；有差异退出码为 1，适合放进 CI 做版本巡检
-node scripts/third-party/sync.mjs --check
+node third-party/sync.mjs --check
 
 # 只同步指定的几个
-node scripts/third-party/sync.mjs --only=betterx --only=douyin-dl
+node third-party/sync.mjs --only=betterx --only=douyin-dl
 ```
 
 纯 Node 18+，无第三方依赖。下载顺序是 `url` → `alternates`，网络错误会重试一次（HTTP 4xx 是确定性失败，不重试）：Release 资产的真实域名是 `objects.githubusercontent.com`，部分网络直连不通，所以清单里给了 `gh-proxy.com` 镜像；raw 偶尔抽风时退回 Bitbucket / jsDelivr。镜像可能比主干慢一拍，所以**判断版本一律以 sha256 与 `@version` 为准，不以镜像的 lag 为准**。
@@ -47,7 +47,7 @@ node scripts/third-party/sync.mjs --only=betterx --only=douyin-dl
 [`SOURCES.md`](SOURCES.md)（每次同步自动重写，别手工改）给出人能读的对照表：
 
 ```
-node scripts/third-party/sync.mjs --report    # 同一张表打到 stdout
+node third-party/sync.mjs --report    # 同一张表打到 stdout
 ```
 
 `manifest.json` 里每条记录的 `source` 字段是机器可读的那份：
@@ -62,13 +62,13 @@ node scripts/third-party/sync.mjs --report    # 同一张表打到 stdout
 
 ## 后期更新的标准动作
 
-1. `node scripts/third-party/sync.mjs --check` —— 看谁动了。版本号变了会显示 `旧 → 新`；文件没变但上游有新提交会标「上游有新提交，本文件未变」，那可忽略。
-2. `node scripts/third-party/sync.mjs` —— 真正拉取，`manifest.json` 与 `SOURCES.md` 一起刷新。
-3. 回头校准`scripts/README.md`：版本号、以及那些「取决于实现」的判断（`@namespace` 是啥、`@updateURL` 指向哪、有没有外部依赖、权限面多大）。这些会随上游重写而失效，镜像就是用来复核它们的。
+1. `node third-party/sync.mjs --check` —— 看谁动了。版本号变了会显示 `旧 → 新`；文件没变但上游有新提交会标「上游有新提交，本文件未变」，那可忽略。
+2. `node third-party/sync.mjs` —— 真正拉取，`manifest.json` 与 `SOURCES.md` 一起刷新。
+3. 回头校准仓库根目录 `README.md`：版本号、以及那些「取决于实现」的判断（`@namespace` 是啥、`@updateURL` 指向哪、有没有外部依赖、权限面多大）。这些会随上游重写而失效，镜像就是用来复核它们的。
 
 ## 更新镜像的节奏
 
 不追版本。只在两种情况跑一次：
 
-1. `scripts/README.md` 的关联脚本表需要更新时（顺手把版本号和判断依据一起校准）；
+1. 仓库根目录 `README.md` 的关联脚本表需要更新时（顺手把版本号和判断依据一起校准）；
 2. 想复核某个脚本的实际行为时（比如确认它到底往哪儿发请求、`@updateURL` 指向哪）。
