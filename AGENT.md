@@ -52,6 +52,7 @@ script/
 │   ├── video/             #   MOV→MP4 转码、视频字符检测
 │   ├── crawler/           #   Playwright / 慕课网爬虫
 │   ├── pdf/ReadPdf.cs
+│   ├── office/            #   Word / Excel / PPT 生成与读取（OfficeIMO，含 word/excel/ppt/read + 共用数据模块）
 │   ├── html/Playwright.cs
 │   ├── Http/              #   api.cs / Json.cs
 │   ├── Screen/screen.cs
@@ -153,6 +154,7 @@ root.Parse(args).Invoke();
 | 字节 / 时间 / 图片 / JSON / 绘图 | `src/Helper/` —— 直接 `#:include ../Helper/*.cs` |
 | 路径补齐类扩展 | `src/data/` —— `#:include ../Data/*.cs`（注意大小写，Linux 区分） |
 | TDLib 会话、NDJSON 接收、下载进度 | `src/tdl/TdlEnv.cs`、`TdlUpdateHandler.cs`、`TdlDownloadTracker.cs` |
+| Office 文档生成 / 读取（docx/xlsx/pptx） | `src/office/` —— OfficeIMO 3.6.x，`word.cs` / `excel.cs` / `ppt.cs` / `read.cs`，共用 `Modules/DemoData.cs` |
 | 命令行参数定义 | 参考 `chunsou/Modules/CliOptions.cs`（System.CommandLine 集中声明模式） |
 | 终端表格 / 进度条 | `Spectre.Console`（`Table`、`Progress`、`FigletText`） |
 

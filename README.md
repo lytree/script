@@ -24,7 +24,7 @@ dotnet run src/search/btsou.cs -- list
 
 | 路径 | 内容 |
 | --- | --- |
-| `src/` | 按功能分类的 C# File-Based App 脚本（tdl / search / data / files / video / crawler …） |
+| `src/` | 按功能分类的 C# File-Based App 脚本（tdl / search / data / files / video / crawler / office …） |
 | `demo/`、`lib/`、`models/`、`data/`、`output/` | 示例、共享代码、模型、运行时数据与产物 |
 | `run.ps1`、`env.cs` | 统一执行入口与公共路径扩展 |
 | [`browser/`](browser/) | 2 个自维护油猴脚本（**发布源**，见[油猴脚本](#油猴脚本browser)） |
@@ -219,6 +219,29 @@ winget configure -f .\install-wsl-kali\configurations\ffmpeg.winget  --accept-co
 **约定**：脚本必须 pwsh 7（5.1 会失败）；下载安装统一走 `winget configure`，不再提供 `.bat` / `.cmd` 入口。
 
 📖 详见 **[`install-wsl-kali/windows/README.md`](install-wsl-kali/windows/README.md)** —— 含完整脚本清单、参数说明、本机现状与踩坑记录。
+
+## Office 文档脚本（src/office/）
+
+用 [OfficeIMO](https://github.com/EvotecIT/OfficeIMO) 在命令行里生成 / 读取 Word、Excel、PowerPoint，**不需要装 Office、不走 COM**。
+
+```powershell
+. .\run.ps1
+run word.cs  --pdf                                   # 生成 Word 报告（标题/列表/表格/图表/页眉页脚）
+run excel.cs --pdf                                   # 生成 Excel 报表（多表/公式/图表/冻结窗格）
+run ppt.cs   --pdf                                   # 生成 4 页 PPT（封面/要点/表格/图表/备注）
+run read.cs  output/officeimo/word.docx --mode markdown # 读文档 → 文本 / Markdown / 结构信息
+```
+
+| 脚本 | 说明 |
+| --- | --- |
+| [`src/office/word.cs`](src/office/word.cs) | Word 报告，含内嵌图表、页眉页脚与页码、文档属性、可选 PDF |
+| [`src/office/excel.cs`](src/office/excel.cs) | Excel 报表，含样式、数字格式、跨表公式、自动筛选、柱状图、打印设置 |
+| [`src/office/ppt.cs`](src/office/ppt.cs) | PowerPoint 汇报，含项目符号、表格、原生图表、演讲者备注 |
+| [`src/office/read.cs`](src/office/read.cs) | 读 `.docx/.xlsx/.pptx`，输出 text / markdown / info，可转 PDF |
+
+三个生成脚本默认用内置示例数据，也可 `--data sales.csv` 换自己的数据（表头 `Region,Revenue,Growth`）。
+
+📖 详见 **[`src/office/README.md`](src/office/README.md)** —— 选项、CSV 约定、依赖版本与踩坑记录。
 
 ## 第三方镜像（third-party/）
 
