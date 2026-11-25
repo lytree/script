@@ -383,3 +383,6 @@ output.bmp
 
 # 迁移自 GMScript 的本机专用脚本（含个人镜像路径 / 用户名），不入库
 windows/*kali*.ps1
+
+# WorkBuddy 工作区数据
+.workbuddy/

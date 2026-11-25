@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# .NET SDK 配置（仓库底座是 .NET 10）
+# 应用: winget configure -f configurations\dotnet.winget --accept-configuration-agreements --disable-interactivity
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: dotnetSdk
+      directives:
+        description: 安装 .NET SDK 10
+        securityContext: elevated
+      settings:
+        id: Microsoft.DotNet.SDK.10
+        source: winget
