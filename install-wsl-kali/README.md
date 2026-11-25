@@ -74,6 +74,7 @@ install-wsl-kali/
     ├── fnm.winget          #   安装 Schniz.fnm（schema 0.2）
     ├── devtools.winget     #   安装 PowerShell 7 / Git / Git LFS / gsudo（schema 0.2）
     ├── ffmpeg.winget       #   安装 FFmpeg（Gyan.FFmpeg，schema 0.2）
+    ├── irfanview.winget    #   安装 IrfanView 64 位 + 插件包（schema 0.2）
     ├── windows-default.winget  #   Windows 设置默认档 13 项（DSC v3 原生 Registry 资源）
     └── windows-full.winget     #   Windows 设置全部档 17 项（DSC v3 原生 Registry 资源）
 └── windows/                # Windows 环境脚本（IrfanView / PotPlayer 文件关联、系统环境变量；

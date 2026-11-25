@@ -14,6 +14,7 @@
 | --- | --- |
 | [`../configurations/devtools.winget`](../configurations/devtools.winget) | PowerShell 7 / Git / Git LFS / gsudo |
 | [`../configurations/ffmpeg.winget`](../configurations/ffmpeg.winget) | FFmpeg（Gyan full build） |
+| [`../configurations/irfanview.winget`](../configurations/irfanview.winget) | IrfanView 64 位 + 插件包（RAW / HEIC / JXL 解码依赖） |
 
 ```powershell
 # 安装开发基础工具链（pwsh7 + Git + LFS + gsudo）
@@ -21,6 +22,9 @@ winget configure -f .\install-wsl-kali\configurations\devtools.winget --accept-c
 
 # 安装 FFmpeg
 winget configure -f .\install-wsl-kali\configurations\ffmpeg.winget --accept-configuration-agreements --disable-interactivity
+
+# 安装 IrfanView（本体 + 插件包）
+winget configure -f .\install-wsl-kali\configurations\irfanview.winget --accept-configuration-agreements --disable-interactivity
 ```
 
 声明式、幂等：已装且版本一致时自动跳过，重复运行无害。
@@ -53,7 +57,7 @@ gsudo pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\s
 # 3. PotPlayer 视频关联
 .\install-wsl-kali\windows\potplayer-assoc.ps1
 
-# 4. 安装开发工具链 / FFmpeg → 走 winget configure（见上）
+# 4. 安装开发工具链 / FFmpeg / IrfanView → 走 winget configure（见上）
 ```
 
 ---
@@ -121,13 +125,16 @@ registry=https://registry.npmmirror.com
 
 ## IrfanView 图片关联
 
-给 `D:\IrfanView\i_view64.exe`（4.75）关联 45 种图片格式，双击直接用 IrfanView 打开。
-改路径：编辑脚本顶部的 `$IvExe`。
+给 IrfanView（4.75+）关联 45 种图片格式，双击直接用 IrfanView 打开。
+exe 自动探测：`-ExePath` 参数优先，否则按序尝试 winget 默认目录（`C:\Program Files\IrfanView`）、
+32 位目录、`D:\IrfanView` 等候选路径。
+IrfanView 本体推荐用 `irfanview.winget` 安装（见上）。
 
 ```powershell
-irfanview-assoc.ps1                 # 关联
-irfanview-assoc.ps1 -Remove         # 撤销
-irfanview-assoc.ps1 -NoPause        # 无人值守（不暂停）
+irfanview-assoc.ps1                                          # 关联（exe 自动探测）
+irfanview-assoc.ps1 -Remove                                  # 撤销
+irfanview-assoc.ps1 -NoPause                                 # 无人值守（不暂停）
+irfanview-assoc.ps1 -ExePath "D:\IrfanView\i_view64.exe"     # 手动指定 exe
 ```
 
 **为什么写用户级（HKCU）而非系统级**：用户级优先级**高于**系统级，无需管理员，

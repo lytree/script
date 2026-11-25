@@ -8,17 +8,18 @@
     - 用户级优先级高于系统默认（如 .bmp 默认指向 Paint.Picture）
   /remove 只删 ProgID 与 OpenWithProgids 条目，保留扩展名键本身 —— Windows 自动回落系统默认关联。
 .EXAMPLE
-  .\irfanview-assoc.ps1                # 关联（默认）
-  .\irfanview-assoc.ps1 -Remove        # 撤销
-  .\irfanview-assoc.ps1 -NoPause       # 无人值守（不暂停）
+  .\irfanview-assoc.ps1                          # 关联（exe 自动探测，winget 安装目录优先）
+  .\irfanview-assoc.ps1 -Remove                  # 撤销
+  .\irfanview-assoc.ps1 -NoPause                 # 无人值守（不暂停）
+  .\irfanview-assoc.ps1 -ExePath "D:\IrfanView\i_view64.exe"   # 手动指定 exe
 #>
 [CmdletBinding()]
 param(
     [switch]$Remove,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [string]$ExePath = ''   # 手动指定 i_view64.exe 路径，跳过自动探测
 )
 
-$IvExe  = 'D:\IrfanView\i_view64.exe'
 $ProgId = 'IrfanView.Image'
 # 单行列表，避免续行问题
 $Exts   = @('jpg','jpeg','jpe','png','bmp','dib','gif','webp','tif','tiff','ico','cur','svg','svgz',
@@ -26,15 +27,30 @@ $Exts   = @('jpg','jpeg','jpe','png','bmp','dib','gif','webp','tif','tiff','ico'
             'jp2','j2k','jpf','jpx','jxl','heic','heif','avif','tga','targa','pcx','xcf','wbmp',
             'pbm','pgm','ppm','pnm','hdr','exr','dds')
 
+# exe 定位：-ExePath 参数优先，否则按序探测（winget 默认安装目录 + 常见自定义目录）
+$IvCandidates = @(
+    'C:\Program Files\IrfanView\i_view64.exe',      # winget（IrfanView.IrfanView）默认目录
+    'C:\Program Files (x86)\IrfanView\i_view64.exe',# winget 32 位默认目录
+    'D:\IrfanView\i_view64.exe'                     # 本机历史自定义目录
+)
+$IvExe = if ($ExePath) {
+    $ExePath
+}
+else {
+    ($IvCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+if (-not $IvExe) {
+    Write-Host '[X] IrfanView not found.' -ForegroundColor Red
+    Write-Host '    已尝试: ' ($IvCandidates -join ' / ') -ForegroundColor Red
+    Write-Host '    先安装（推荐 winget）:' -ForegroundColor Red
+    Write-Host '      winget configure -f configurations\irfanview.winget --accept-configuration-agreements' -ForegroundColor Red
+    Write-Host '    或手动指定路径:' -ForegroundColor Red
+    Write-Host '      irfanview-assoc.ps1 -ExePath "D:\IrfanView\i_view64.exe"' -ForegroundColor Red
+    exit 1
+}
+
 $classes = 'HKCU:\Software\Classes'
 $progKey = "$classes\$ProgId"
-
-function Test-Exe {
-    if (Test-Path -LiteralPath $IvExe) { return $true }
-    Write-Host "[X] IrfanView not found: $IvExe"
-    Write-Host "    Edit the `"IvExe`" line near the top of this script."
-    return $false
-}
 
 function Invoke-Install {
     Write-Host '  Registering program...'
@@ -96,9 +112,11 @@ Write-Host "  Mode      : $(if ($Remove) { 'remove' } else { 'install' })"
 Write-Host ''
 
 $code = 1
-if (-not (Test-Exe)) { $code = 1 }
-elseif ($Remove)    { $code = Invoke-Remove }
-else                { $code = Invoke-Install }
+if (-not (Test-Path -LiteralPath $IvExe)) {
+    Write-Host "[X] IrfanView not found: $IvExe" -ForegroundColor Red
+}
+elseif ($Remove) { $code = Invoke-Remove }
+else             { $code = Invoke-Install }
 
 if (-not $NoPause) {
     Write-Host ''

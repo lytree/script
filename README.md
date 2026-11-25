@@ -211,10 +211,11 @@ Windows 环境配置脚本 + winget 安装配置，**全部为命令行工具，
 # 安装 pwsh7 / Git / LFS / gsudo、FFmpeg → 走 winget configure（声明式、幂等）
 winget configure -f .\install-wsl-kali\configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
 winget configure -f .\install-wsl-kali\configurations\ffmpeg.winget  --accept-configuration-agreements --disable-interactivity
+winget configure -f .\install-wsl-kali\configurations\irfanview.winget --accept-configuration-agreements --disable-interactivity
 ```
 
 涵盖：系统级环境变量（uv / Python / Java / Maven / Node / vcpkg）、IrfanView 图片关联、PotPlayer 视频关联；
-下载安装类（PowerShell 7 / Git / Git LFS / gsudo / FFmpeg）已迁移到 [`install-wsl-kali/configurations/`](install-wsl-kali/configurations/) 的 `*.winget` 声明式配置。
+下载安装类（PowerShell 7 / Git / Git LFS / gsudo / FFmpeg / IrfanView）已迁移到 [`install-wsl-kali/configurations/`](install-wsl-kali/configurations/) 的 `*.winget` 声明式配置。
 
 **约定**：脚本必须 pwsh 7（5.1 会失败）；下载安装统一走 `winget configure`，不再提供 `.bat` / `.cmd` 入口。
 

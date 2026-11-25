@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# IrfanView 配置（本体 + 插件包）
+# 应用: winget configure -f configurations\irfanview.winget --accept-configuration-agreements --disable-interactivity
+# 注意: 插件包是 RAW / HEIC / JXL 等格式的解码依赖，装本体后建议一并安装；
+#       安装后配合 windows\irfanview-assoc.ps1 做文件关联（脚本会自动探测 exe 位置）。
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: irfanview
+      directives:
+        description: 安装 IrfanView（64 位）
+        securityContext: elevated
+      settings:
+        id: IrfanView.IrfanView
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: irfanview-plugins
+      directives:
+        description: 安装 IrfanView 插件包（RAW / HEIC / JXL 等格式解码依赖）
+        securityContext: elevated
+      settings:
+        id: IrfanView.IrfanViewPlugins
+        source: winget
