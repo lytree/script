@@ -268,7 +268,7 @@ if (-not $exe) {
     Write-Host '[X] PotPlayer not found.' -ForegroundColor Red
     Write-Host '    已尝试: App Paths 注册表 / 已注册 ProgID / 常见安装目录 / PATH' -ForegroundColor Red
     Write-Host '    装好 PotPlayer 后重跑，或手动指定路径:' -ForegroundColor Red
-    Write-Host '      potplayer-assoc.bat -ExePath "D:\PotPlayer\PotPlayerMini64.exe"' -ForegroundColor Red
+    Write-Host '      potplayer-assoc.ps1 -ExePath "D:\PotPlayer\PotPlayerMini64.exe"' -ForegroundColor Red
     Write-Host ''
     exit 1
 }

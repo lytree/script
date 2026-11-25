@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# FFmpeg 配置（替代 install-ffmpeg.ps1 的安装职责）
+# 应用: winget configure -f configurations\ffmpeg.winget --accept-configuration-agreements --disable-interactivity
+# 注意: Gyan.FFmpeg 的安装包托管在 GitHub —— 本机 winget 走 GitHub 代理有已知问题
+#       （见 windows\README.md「winget 代理能力」），configure 失败时可用 curl 直下解压兜底。
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: ffmpeg
+      directives:
+        description: 安装 FFmpeg（Gyan full build）
+        securityContext: elevated
+      settings:
+        id: Gyan.FFmpeg
+        source: winget

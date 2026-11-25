@@ -28,7 +28,7 @@ dotnet run src/search/btsou.cs -- list
 | `demo/`、`lib/`、`models/`、`data/`、`output/` | 示例、共享代码、模型、运行时数据与产物 |
 | `run.ps1`、`env.cs` | 统一执行入口与公共路径扩展 |
 | [`browser/`](browser/) | 2 个自维护油猴脚本（**发布源**，见[油猴脚本](#油猴脚本browser)） |
-| [`windows/`](windows/) | 9 个 Windows 环境配置脚本（`.ps1` / `.bat` / `.cmd`） |
+| [`install-wsl-kali/windows/`](install-wsl-kali/windows/) | 3 个 Windows 环境配置脚本 + 2 份 winget 安装配置 |
 | [`third-party/`](third-party/) | 6 个上游油猴脚本的只读镜像 + 同步工具 |
 | `scripts/` | 迁移后仅余 `LICENSE`（自维护脚本的 MIT 许可） |
 
@@ -194,27 +194,31 @@ https://raw.githubusercontent.com/lytree/script/main/browser/telegram-media-down
 - **能力边界**：只解析直链，**不突破限速**，上游自己建议配超级会员；百度超过 50 MB 的文件用浏览器直下会被 CDN 拒绝，得走下载器。
 - **备用分发**：ScriptCat 脚本页 8398（本机实测 200）；GreasyFork 页在本机网络下超时，不代表站点不可用。
 
-## Windows 环境脚本（windows/）
+## Windows 环境脚本（install-wsl-kali/windows/）
 
-一组 Windows 环境搭建 / 配置脚本，**全部为命令行工具，不影响上面的油猴脚本**。
+Windows 环境配置脚本 + winget 安装配置，**全部为命令行工具，不影响上面的油猴脚本**。
 
 ```powershell
 # 一键配置全部系统级环境变量（自动提权）
-.\windows\run-as-admin.cmd
-
-# 装 FFmpeg（自动探测本机代理）
-.\windows\install-ffmpeg.bat
+.\install-wsl-kali\windows\set-system-env-pwsh7.ps1
 
 # 给图片关联 IrfanView
-.\windows\irfanview-assoc.bat
+.\install-wsl-kali\windows\irfanview-assoc.ps1
+
+# 给视频关联 PotPlayer
+.\install-wsl-kali\windows\potplayer-assoc.ps1
+
+# 安装 pwsh7 / Git / LFS / gsudo、FFmpeg → 走 winget configure（声明式、幂等）
+winget configure -f .\install-wsl-kali\configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
+winget configure -f .\install-wsl-kali\configurations\ffmpeg.winget  --accept-configuration-agreements --disable-interactivity
 ```
 
-涵盖：系统级环境变量（uv / Python / Java / Maven / Node / vcpkg）、PowerShell 7 与 Git 安装、gsudo 安装、FFmpeg 安装、IrfanView 图片文件关联。
+涵盖：系统级环境变量（uv / Python / Java / Maven / Node / vcpkg）、IrfanView 图片关联、PotPlayer 视频关联；
+下载安装类（PowerShell 7 / Git / Git LFS / gsudo / FFmpeg）已迁移到 [`install-wsl-kali/configurations/`](install-wsl-kali/configurations/) 的 `*.winget` 声明式配置。
 
-**约定**：`.ps1` 承载全部逻辑，`.bat` / `.cmd` 只做调用入口（定位 pwsh → 转发参数 → 透传退出码）。
-需要管理员权限的用 `.cmd` 入口（自动弹 UAC），不需要的用 `.bat`。
+**约定**：脚本必须 pwsh 7（5.1 会失败）；下载安装统一走 `winget configure`，不再提供 `.bat` / `.cmd` 入口。
 
-📖 详见 **[`windows/README.md`](windows/README.md)** —— 含完整脚本清单、参数说明、本机现状与踩坑记录。
+📖 详见 **[`install-wsl-kali/windows/README.md`](install-wsl-kali/windows/README.md)** —— 含完整脚本清单、参数说明、本机现状与踩坑记录。
 
 ## 第三方镜像（third-party/）
 
@@ -230,4 +234,4 @@ https://raw.githubusercontent.com/lytree/script/main/browser/telegram-media-down
 
 ## 许可
 
-本仓库主体未单独声明整体许可证。`browser/`、`windows/` 下的自维护脚本沿用 [`scripts/LICENSE`](scripts/LICENSE)（MIT）；`third-party/` 下的镜像归各自上游作者所有，许可证见对应文件 header 与 [`third-party/README.md`](third-party/README.md)。各脚本另有自身许可证声明（见脚本 header 的 `@license`）。
+本仓库主体未单独声明整体许可证。`browser/`、`install-wsl-kali/windows/` 下的自维护脚本沿用 [`scripts/LICENSE`](scripts/LICENSE)（MIT）；`third-party/` 下的镜像归各自上游作者所有，许可证见对应文件 header 与 [`third-party/README.md`](third-party/README.md)。各脚本另有自身许可证声明（见脚本 header 的 `@license`）。

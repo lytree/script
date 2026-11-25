@@ -67,13 +67,17 @@ install-wsl-kali/
 ├── _dotnet.ps1             # .NET SDK 10 安装
 ├── _tools.ps1              # Python uv + Node fnm（各自独立安装，互不影响）
 ├── _windows-settings.ps1   # Windows 开发者设置（注册表）
-└── configurations/         # winget configure 声明式配置
+├── configurations/         # winget configure 声明式配置
     ├── wsl.winget          #   启用 VirtualMachinePlatform + 安装 Microsoft.WSL（schema 0.2）
     ├── dotnet.winget       #   安装 Microsoft.DotNet.SDK.10（schema 0.2）
     ├── uv.winget           #   安装 astral-sh.uv（schema 0.2）
     ├── fnm.winget          #   安装 Schniz.fnm（schema 0.2）
+    ├── devtools.winget     #   安装 PowerShell 7 / Git / Git LFS / gsudo（schema 0.2）
+    ├── ffmpeg.winget       #   安装 FFmpeg（Gyan.FFmpeg，schema 0.2）
     ├── windows-default.winget  #   Windows 设置默认档 13 项（DSC v3 原生 Registry 资源）
     └── windows-full.winget     #   Windows 设置全部档 17 项（DSC v3 原生 Registry 资源）
+└── windows/                # Windows 环境脚本（IrfanView / PotPlayer 文件关联、系统环境变量；
+                            #   下载安装类已全部迁到 configurations/*.winget），详见 windows/README.md
 ```
 
 模块通过 dot-source 加载进主入口作用域，新增功能只需添加 `_xxx.ps1` 并注册到主入口的模块列表。

@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# 开发基础工具链配置（替代 windows-dev-setup.ps1 的安装职责）
+# 包含: PowerShell 7 / Git / Git LFS / gsudo
+# 应用: winget configure -f configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: pwsh7
+      directives:
+        description: 安装 PowerShell 7
+        securityContext: elevated
+      settings:
+        id: PowerShell.PowerShell
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: git
+      directives:
+        description: 安装 Git
+        securityContext: elevated
+      settings:
+        id: Git.Git
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: gitlfs
+      directives:
+        description: 安装 Git LFS
+        securityContext: elevated
+      settings:
+        id: Git.GitLFS
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: gsudo
+      directives:
+        description: 安装 gsudo（命令级提权）
+        securityContext: elevated
+      settings:
+        id: gerardog.gsudo
+        source: winget
