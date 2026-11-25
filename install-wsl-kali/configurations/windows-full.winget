@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+# Windows 开发者设置 - 全部档（17 项 = 默认档 13 项 + 4 项个人偏好）
+# 说明: 使用 DSC v3 原生 Microsoft.Windows/Registry 资源（需 winget 1.11+，首次运行会自动安装
+#       Microsoft.DesiredStateConfiguration 处理器），逐项幂等：已是目标值自动跳过。
+# 应用: winget configure -f configurations\windows-full.winget --accept-configuration-agreements --disable-interactivity
+# 注意: 远程桌面防火墙规则由脚本在 configure 之后单独启用（DSC 注册表资源管不了防火墙）。
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  winget:
+    processor:
+      identifier: dscv3
+resources:
+  - name: long-paths
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKLM\SYSTEM\CurrentControlSet\Control\FileSystem
+      valueName: LongPathsEnabled
+      valueData:
+        DWord: 1
+    metadata:
+      description: 启用 Win32 长路径支持
+      winget:
+        securityContext: elevated
+  - name: developer-mode
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock
+      valueName: AllowDevelopmentWithoutDevLicense
+      valueData:
+        DWord: 1
+    metadata:
+      description: 启用开发者模式（侧载 + 开发功能）
+      winget:
+        securityContext: elevated
+  - name: sudo-enabled
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo
+      valueName: Enabled
+      valueData:
+        DWord: 3
+    metadata:
+      description: 启用 Sudo（inline 模式；Win10 无此键，写入无害）
+      winget:
+        securityContext: elevated
+  - name: show-file-extensions
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: HideFileExt
+      valueData:
+        DWord: 0
+    metadata:
+      description: 显示文件扩展名
+  - name: show-hidden-files
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: Hidden
+      valueData:
+        DWord: 1
+    metadata:
+      description: 显示隐藏文件
+  - name: taskbar-end-task
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarDeveloperSettings
+      valueName: TaskbarEndTask
+      valueData:
+        DWord: 1
+    metadata:
+      description: 任务栏图标右键显示"结束任务"
+  - name: explorer-tips-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: ShowSyncProviderNotifications
+      valueData:
+        DWord: 0
+    metadata:
+      description: 关闭资源管理器同步提供程序提示
+  - name: web-search-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Policies\Microsoft\Windows\Explorer
+      valueName: DisableSearchBoxSuggestions
+      valueData:
+        DWord: 1
+    metadata:
+      description: 关闭开始/搜索的联网搜索建议
+  - name: search-highlight-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\SearchSettings
+      valueName: IsDynamicSearchBoxEnabled
+      valueData:
+        DWord: 0
+    metadata:
+      description: 关闭"显示搜索亮点"
+  - name: start-recommendations-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: Start_IrisRecommendations
+      valueData:
+        DWord: 0
+    metadata:
+      description: 关闭开始菜单推荐内容
+  - name: start-account-notifications-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: Start_AccountNotifications
+      valueData:
+        DWord: 0
+    metadata:
+      description: 关闭开始菜单账户通知
+  - name: widgets-off
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKLM\SOFTWARE\Policies\Microsoft\Dsh
+      valueName: AllowNewsAndInterests
+      valueData:
+        DWord: 0
+    metadata:
+      description: 关闭小组件（Widgets；Windows 可能保护该策略键）
+      winget:
+        securityContext: elevated
+  - name: remote-desktop
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server
+      valueName: fDenyTSConnections
+      valueData:
+        DWord: 0
+    metadata:
+      description: 启用远程桌面
+      winget:
+        securityContext: elevated
+  - name: explorer-open-this-pc
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+      valueName: LaunchTo
+      valueData:
+        DWord: 1
+    metadata:
+      description: 资源管理器默认打开"此电脑"
+  - name: quick-access-no-frequent-folders
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer
+      valueName: ShowFrequent
+      valueData:
+        DWord: 0
+    metadata:
+      description: 快速访问不显示常用文件夹
+  - name: quick-access-no-recent-files
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer
+      valueName: ShowRecent
+      valueData:
+        DWord: 0
+    metadata:
+      description: 快速访问不显示最近使用的文件
+  - name: do-not-disturb
+    type: Microsoft.Windows/Registry
+    properties:
+      keyPath: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings
+      valueName: NOC_GLOBAL_SETTING_TOASTS_ENABLED
+      valueData:
+        DWord: 0
+    metadata:
+      description: 开启勿扰（禁用所有通知横幅）

@@ -67,11 +67,13 @@ install-wsl-kali/
 ├── _dotnet.ps1             # .NET SDK 10 安装
 ├── _tools.ps1              # Python uv + Node fnm（各自独立安装，互不影响）
 ├── _windows-settings.ps1   # Windows 开发者设置（注册表）
-└── configurations/         # winget configure 声明式配置（DSC schema 0.2）
-    ├── wsl.winget          #   启用 VirtualMachinePlatform + 安装 Microsoft.WSL
-    ├── dotnet.winget       #   安装 Microsoft.DotNet.SDK.10
-    ├── uv.winget           #   安装 astral-sh.uv
-    └── fnm.winget          #   安装 Schniz.fnm
+└── configurations/         # winget configure 声明式配置
+    ├── wsl.winget          #   启用 VirtualMachinePlatform + 安装 Microsoft.WSL（schema 0.2）
+    ├── dotnet.winget       #   安装 Microsoft.DotNet.SDK.10（schema 0.2）
+    ├── uv.winget           #   安装 astral-sh.uv（schema 0.2）
+    ├── fnm.winget          #   安装 Schniz.fnm（schema 0.2）
+    ├── windows-default.winget  #   Windows 设置默认档 13 项（DSC v3 原生 Registry 资源）
+    └── windows-full.winget     #   Windows 设置全部档 17 项（DSC v3 原生 Registry 资源）
 ```
 
 模块通过 dot-source 加载进主入口作用域，新增功能只需添加 `_xxx.ps1` 并注册到主入口的模块列表。
@@ -80,7 +82,7 @@ install-wsl-kali/
 
 每个组件按以下顺序尝试，任何一级成功即停止；脚本**幂等**，已安装/已设置的项自动跳过，可重复运行：
 
-1. **winget configure**（`configurations/*.winget`，声明式、幂等；`-SkipWingetConfig` 可跳过）
+1. **winget configure**（`configurations/*.winget`，声明式、幂等；`-SkipWingetConfig` 可跳过。Windows 设置用 DSC v3 原生 `Microsoft.Windows/Registry` 资源，需 winget 1.11+，首次运行自动安装 dscv3 处理器）
 2. **winget install**（`.NET` → `Microsoft.DotNet.SDK.10`，uv → `astral-sh.uv`，fnm → `Schniz.fnm`）
 3. **官方脚本/回退**（.NET → `dotnet-install.ps1`；uv → astral.sh 安装脚本；fnm → GitHub Release 下载）
 
@@ -101,7 +103,7 @@ install-wsl-kali/
 
 **全部档额外 4 项**：资源管理器默认打开“此电脑”、快速访问不显示常用文件夹/最近文件、勿扰模式。
 
-实现细节：逐项检测当前值（幂等）、个别项失败不中断（BestEffort）、HKCU Explorer 项可选立即重启资源管理器生效。
+实现细节：优先通过 winget configure 应用 `windows-default.winget` / `windows-full.winget`（DSC v3 原生 Registry 资源，逐项幂等），configure 不可用时回退逐项写注册表；远程桌面防火墙规则由脚本单独启用；HKCU Explorer 项可选立即重启资源管理器生效。
 
 ## 重启恢复
 

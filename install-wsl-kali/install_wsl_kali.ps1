@@ -16,7 +16,8 @@
 #   _dotnet.ps1           .NET SDK 安装
 #   _tools.ps1            Python uv + Node fnm 安装
 #   _windows-settings.ps1 Windows 开发者设置
-#   configurations/*.winget  winget configure 声明式配置（wsl / dotnet / tools，优先于安装命令）
+#   configurations/*.winget  winget configure 声明式配置
+#                            （wsl / dotnet / uv / fnm 用 schema 0.2；windows-default/windows-full 用 DSC v3 原生 Registry 资源）
 # 说明:
 #   - 脚本幂等，可重复运行，已完成的步骤会自动跳过
 #   - 安装优先走 winget configure（.winget 配置，声明式/幂等），失败自动回退 winget install / 官方脚本

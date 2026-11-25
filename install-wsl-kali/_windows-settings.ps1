@@ -1,4 +1,5 @@
 ﻿# _windows-settings.ps1 - Windows 开发者设置（参考 microsoft/WindowsDeveloperConfig registry-*.ps1）
+# 路径: winget configure（windows-default/full.winget，DSC v3 原生 Registry 资源）→ 逐项写注册表回退
 # 依赖: _common.ps1
 
 function Convert-RegPath {
@@ -91,23 +92,32 @@ function Install-WindowsSettings {
     # 注意: 用索引器 $_['Core'] 而非 $_.Core —— 部分项没有 Core 键，StrictMode 下属性访问会报错
     $tweaks = $applyFull ? $Script:WinSettingsTweaks : @($Script:WinSettingsTweaks | Where-Object { $_['Core'] })
 
-    $failed = 0
-    foreach ($tweak in $tweaks) {
-        if (Test-RegistryTweak -Tweak $tweak) {
-            Write-Dim "已是目标值，跳过: $($tweak.Description)"
-            continue
-        }
-        try {
-            Invoke-RegistryTweak -Tweak $tweak
-            Write-Info "已设置: $($tweak.Description)"
-        }
-        catch {
-            $failed++
-            if ($tweak['BestEffort']) {
-                Write-Warn2 "跳过（非关键项）: $($tweak.Description) — $($_.Exception.Message)"
+    # 路径 1: winget configure（configurations/windows-default.winget / windows-full.winget，DSC v3 原生 Registry 资源）
+    $configName = $applyFull ? 'windows-full' : 'windows-default'
+    if ((Invoke-WingetConfiguration $configName) -eq 0) {
+        Write-Info "Windows 设置已通过 winget configure 应用（$configName，幂等）。"
+        $failed = 0
+    }
+    else {
+        # 路径 2: 逐项写注册表（回退）
+        $failed = 0
+        foreach ($tweak in $tweaks) {
+            if (Test-RegistryTweak -Tweak $tweak) {
+                Write-Dim "已是目标值，跳过: $($tweak.Description)"
+                continue
             }
-            else {
-                Write-Warn2 "设置失败: $($tweak.Description) — $($_.Exception.Message)"
+            try {
+                Invoke-RegistryTweak -Tweak $tweak
+                Write-Info "已设置: $($tweak.Description)"
+            }
+            catch {
+                $failed++
+                if ($tweak['BestEffort']) {
+                    Write-Warn2 "跳过（非关键项）: $($tweak.Description) — $($_.Exception.Message)"
+                }
+                else {
+                    Write-Warn2 "设置失败: $($tweak.Description) — $($_.Exception.Message)"
+                }
             }
         }
     }
