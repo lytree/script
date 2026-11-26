@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# 语言/媒体工具链合并配置（原 dotnet.winget + ffmpeg.winget + fnm.winget + uv.winget）
+# 包含: .NET SDK 10 / FFmpeg / Node fnm / Python uv
+# 应用: winget configure -f configurations\toolchain.winget --accept-configuration-agreements --disable-interactivity
+#
+# 全部使用 winget 默认安装参数：默认安装位置（机器级 Program Files）、默认 scope、
+# 最新稳定版，不指定版本/自定义路径/安装器参数；重复运行幂等，已装且版本一致自动跳过。
+#
+# 提权：四项目均标 securityContext: elevated，需管理员终端（或接受 UAC 提示），
+#      否则在 --disable-interactivity 下会快速返回非 0 且什么都不装。
+#
+# 注意: Gyan.FFmpeg 的安装包托管在 GitHub，本机 winget 走 GitHub 代理有已知问题
+#      （见 windows\README.md「winget 代理能力」），configure 失败时可用 curl 直下解压兜底。
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: dotnetSdk
+      directives:
+        description: 安装 .NET SDK 10（默认安装）
+        securityContext: elevated
+      settings:
+        id: Microsoft.DotNet.SDK.10
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: ffmpeg
+      directives:
+        description: 安装 FFmpeg（Gyan full build，默认安装）
+        securityContext: elevated
+      settings:
+        id: Gyan.FFmpeg
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: fnmPackage
+      directives:
+        description: 安装 Node 版本管理器 fnm（默认安装）
+        securityContext: elevated
+      settings:
+        id: Schniz.fnm
+        source: winget
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: uvPackage
+      directives:
+        description: 安装 Python 包管理器 uv（默认安装）
+        securityContext: elevated
+      settings:
+        id: astral-sh.uv
+        source: winget

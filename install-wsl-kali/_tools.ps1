@@ -7,8 +7,8 @@ function Install-Uv {
         return
     }
 
-    # 路径 0: winget configure（configurations/uv.winget）
-    if ((Invoke-WingetConfiguration 'uv') -eq 0 -and (Test-ToolOnPath 'uv.exe')) {
+    # 路径 0: winget configure（configurations/toolchain.winget，已合并 dotnet/ffmpeg/fnm/uv）
+    if ((Invoke-WingetConfiguration 'toolchain') -eq 0 -and (Test-ToolOnPath 'uv.exe')) {
         Write-Info 'uv 安装完成（winget configure）。'
         Write-Dim '提示: 可用 uv python install <版本> 管理 Python 解释器，例如 uv python install 3.14'
         return
@@ -45,8 +45,8 @@ function Install-Fnm {
         return
     }
 
-    # 路径 0: winget configure（configurations/fnm.winget）
-    if ((Invoke-WingetConfiguration 'fnm') -eq 0 -and (Test-ToolOnPath 'fnm.exe')) {
+    # 路径 0: winget configure（configurations/toolchain.winget，已合并 dotnet/ffmpeg/fnm/uv）
+    if ((Invoke-WingetConfiguration 'toolchain') -eq 0 -and (Test-ToolOnPath 'fnm.exe')) {
         Write-Info 'fnm 安装完成（winget configure）。'
         Complete-FnmSetup
         return
@@ -96,7 +96,7 @@ function Complete-FnmSetup {
 }
 
 function Install-PythonNodeToolchain {
-    # uv / fnm 各自独立安装：configure（uv.winget / fnm.winget）→ winget install → 官方脚本回退
+    # uv / fnm 各自独立安装：configure（共用 toolchain.winget）→ winget install → 官方脚本回退
     # 某一个失败不影响另一个继续安装
     Install-Uv
     Install-Fnm

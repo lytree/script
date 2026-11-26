@@ -16,7 +16,7 @@
 ## 快速开始
 
 ```powershell
-# 交互式：菜单选择 + 交互选择 Kali 安装路径
+# 交互式：菜单选择 + 交互选择 WSL 磁盘存储位置
 .\install-wsl-kali\install_wsl_kali.ps1
 
 # 一键全装（WSL → .NET → uv/fnm → Windows 设置 → Kali）
@@ -29,7 +29,8 @@
 .\install-wsl-kali\install_wsl_kali.ps1 -Install ToolsOnly     # 仅 Python uv + Node fnm
 .\install-wsl-kali\install_wsl_kali.ps1 -Install SettingsOnly  # 仅 Windows 开发者设置
 
-# 非交互 + 指定 Kali 安装路径
+# 非交互 + 自定义 WSL 磁盘存储位置
+.\install-wsl-kali\install_wsl_kali.ps1 -Install All -WslPath D:\WSL -NonInteractive   # 发行版落在 D:\WSL\kali-linux
 .\install-wsl-kali\install_wsl_kali.ps1 -Install All -KaliPath D:\WSL\kali-linux -NonInteractive
 ```
 
@@ -50,7 +51,8 @@
 | 参数 | 说明 |
 |---|---|
 | `-Install <All\|WslOnly\|KaliOnly\|DotNetOnly\|ToolsOnly\|SettingsOnly>` | 跳过菜单直接执行 |
-| `-KaliPath <路径>` | 指定 Kali 安装目录（免交互路径选择） |
+| `-WslPath <根目录>` | 自定义 WSL 磁盘存储位置（如 `D:\WSL`，发行版落在 `D:\WSL\<发行版名>`） |
+| `-KaliPath <路径>` | 直接指定 Kali 虚拟磁盘目录（优先于 `-WslPath`，免交互路径选择） |
 | `-NonInteractive` | 非交互模式，全部采用默认值（恢复任务自动使用此模式） |
 | `-NoReboot` | 需要重启时不自动重启，仅提示 |
 | `-SkipWingetConfig` | 跳过 winget configure 路径，直接用 winget install / 官方脚本 |
@@ -62,18 +64,15 @@ install-wsl-kali/
 ├── install_wsl_kali.ps1    # 主入口：参数、菜单、调度（All 顺序: WSL → .NET → uv/fnm → 设置 → Kali）
 ├── _common.ps1             # 公共辅助：输出/交互、UAC 提权、wsl 进程封装、winget 封装、
 │                           #   winget configure 封装、PATH 管理、重启恢复计划任务
-├── _wsl.ps1                # WSL 平台安装（dism 启用功能 + wsl --install）
-├── _kali.ps1               # Kali 安装（交互式选择安装路径，推荐非系统盘）
+├── _wsl.ps1                # WSL 平台安装（dism 启用功能 + wsl --install/--update，纯 PowerShell）
+├── _kali.ps1               # WSL 磁盘存储位置（自定义/迁移）+ Kali 安装
 ├── _dotnet.ps1             # .NET SDK 10 安装
 ├── _tools.ps1              # Python uv + Node fnm（各自独立安装，互不影响）
 ├── _windows-settings.ps1   # Windows 开发者设置（注册表）
-├── configurations/         # winget configure 声明式配置
-    ├── wsl.winget          #   启用 VirtualMachinePlatform + 安装 Microsoft.WSL（schema 0.2）
-    ├── dotnet.winget       #   安装 Microsoft.DotNet.SDK.10（schema 0.2）
-    ├── uv.winget           #   安装 astral-sh.uv（schema 0.2）
-    ├── fnm.winget          #   安装 Schniz.fnm（schema 0.2）
+├── configurations/         # winget configure 声明式配置（WSL 不在其中，由脚本直接处理）
+    ├── toolchain.winget    #   合并配置：.NET SDK 10 + FFmpeg + fnm + uv（均默认安装，schema 0.2）
     ├── devtools.winget     #   安装 PowerShell 7 / Git / Git LFS / gsudo（schema 0.2）
-    ├── ffmpeg.winget       #   安装 FFmpeg（Gyan.FFmpeg，schema 0.2）
+    ├── install-devtools.ps1 #  devtools 的安装脚本：落盘位置 D 盘优先、D 盘不可用回落 C 盘
     ├── irfanview.winget    #   安装 IrfanView 64 位 + 插件包（schema 0.2）
     ├── windows-default.winget  #   Windows 设置默认档 13 项（DSC v3 原生 Registry 资源）
     └── windows-full.winget     #   Windows 设置全部档 17 项（DSC v3 原生 Registry 资源）
@@ -93,12 +92,23 @@ install-wsl-kali/
 
 例外：
 
-- **WSL**：configure 成功后仍复用重启判定（功能启用但需激活 → 注册恢复任务 → 重启续装）；旧版运行时走 `wsl --update --web-download` 回退
-- **Kali**：无 winget 包，直接 `wsl --install -d kali-linux`；WSL ≥ 2.4.4 支持 `--location` 装到指定目录，否则普通安装后用 `wsl --manage kali-linux --move` 迁移
+- **WSL**：不走 winget configure（无 `.winget` 配置），由脚本直接用 PowerShell 处理：`dism` 启用 `VirtualMachinePlatform` / `Microsoft-Windows-Subsystem-Linux` → `wsl --install --no-distribution` → `wsl --update` / `--web-download` → 最后回退 `winget install Microsoft.WSL`；功能启用后需激活则注册恢复任务 → 重启续装
+- **Kali**：无 winget 包，直接 `wsl --install -d kali-linux`；WSL ≥ 2.4.4 支持 `--location` 装到自定义目录，否则普通安装后用 `wsl --manage kali-linux --move` 迁移
 
-## Kali 安装路径选择
+## WSL 磁盘存储位置（自定义）
 
-交互模式下会列出各盘可用空间并推荐非系统盘（预留 ≥ 20 GB），支持预设项和自定义路径；校验盘符存在、空间不足会警告确认、目录非空需确认。
+默认安装位置在 `%LOCALAPPDATA%`，可通过三种方式改到别的盘（脚本会校验盘符存在、可用空间 ≥ 20 GB、目录非空需确认）：
+
+| 方式 | 用法 | 落盘位置 |
+|---|---|---|
+| 交互选择 | 直接运行脚本 | 列出各盘可用空间、推荐非系统盘，可选编号或自定义路径 |
+| 根目录参数 | `-WslPath D:\WSL` | `D:\WSL\<发行版名>`（Kali 为 `D:\WSL\kali-linux`） |
+| 完整路径参数 | `-KaliPath D:\WSL\kali-linux` | 指定目录本身 |
+
+- 发行版目录由 WSL 创建（脚本只建父目录），避免 `--location` / `--move` 因目标目录已存在而失败
+- 重启恢复任务会沿用已确定的磁盘位置，重启后不会回落到默认目录
+- Kali 已安装但不在目标位置时，脚本会询问是否用 `wsl --manage kali-linux --move <路径>` 迁移（非交互模式不迁移，仅提示）
+- 安装结束会打印各发行版的实际磁盘目录（读注册表 `HKCU\...\Lxss`），可据此确认自定义位置是否生效
 
 ## Windows 开发者设置
 

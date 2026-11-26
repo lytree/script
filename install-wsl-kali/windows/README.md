@@ -2,7 +2,7 @@
 
 本目录只保留 **3 个非安装类脚本**（文件关联 / 系统环境变量）。
 **下载安装类任务已全部迁移到 [`../configurations/`](../configurations/) 的 `*.winget` 声明式配置**，
-由 `winget configure` 统一安装（与 WSL / .NET / uv / fnm 同一套机制）。
+由 `winget configure` 统一安装（与 .NET / uv / fnm 同一套机制；**WSL 例外**，由脚本用 dism + `wsl.exe` 直接装）。
 
 原 `.bat` / `.cmd` 入口与 `windows-dev-setup.ps1` / `install-ffmpeg.ps1` 已删除（git 历史可找回）。
 
@@ -13,21 +13,43 @@
 | 配置 | 内容 |
 | --- | --- |
 | [`../configurations/devtools.winget`](../configurations/devtools.winget) | PowerShell 7 / Git / Git LFS / gsudo |
-| [`../configurations/ffmpeg.winget`](../configurations/ffmpeg.winget) | FFmpeg（Gyan full build） |
+| [`../configurations/toolchain.winget`](../configurations/toolchain.winget) | .NET SDK 10 / FFmpeg（Gyan full build）/ fnm / uv（默认安装参数） |
 | [`../configurations/irfanview.winget`](../configurations/irfanview.winget) | IrfanView 64 位 + 插件包（RAW / HEIC / JXL 解码依赖） |
 
 ```powershell
 # 安装开发基础工具链（pwsh7 + Git + LFS + gsudo）
 winget configure -f .\install-wsl-kali\configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
 
-# 安装 FFmpeg
-winget configure -f .\install-wsl-kali\configurations\ffmpeg.winget --accept-configuration-agreements --disable-interactivity
+# 安装 .NET SDK 10 + FFmpeg + fnm + uv（一份合并配置，默认安装）
+winget configure -f .\install-wsl-kali\configurations\toolchain.winget --accept-configuration-agreements --disable-interactivity
 
 # 安装 IrfanView（本体 + 插件包）
 winget configure -f .\install-wsl-kali\configurations\irfanview.winget --accept-configuration-agreements --disable-interactivity
 ```
 
 声明式、幂等：已装且版本一致时自动跳过，重复运行无害。
+
+### 安装位置：D 盘优先（`devtools.winget` 做不到，用配套脚本）
+
+`Microsoft.WinGet.DSC/WinGetPackage` 资源只接受 `id / source / version / ensure / matchOption / useLatest / installMode`，
+**没有安装路径参数**，所以 YAML 里写不了"装到 D 盘"。要控制落盘位置跑配套脚本：
+
+```powershell
+# D 盘存在 → D:\<App>（对齐本机既有布局 D:\Git、D:\Git LFS）；D 盘不可用 → C:\Program Files\<App>
+gsudo pwsh -NoProfile -File .\install-wsl-kali\configurations\install-devtools.ps1
+
+# 只预览，不安装
+.\install-wsl-kali\configurations\install-devtools.ps1 -WhatIf
+
+# 想保留 Program Files 结构 / 完全按默认位置装
+.\install-devtools.ps1 -BaseDir 'D:\Program Files'
+.\install-devtools.ps1 -SkipLocation
+```
+
+- `Git`（inno 安装器）认 `--location`，基本一定生效；`Git LFS` 跟随已装的 Git 目录，不单独指定路径。
+- `PowerShell 7` / `gsudo` 是 msi/wix 包，能否吃下 `--location` 由安装包决定；带路径失败时脚本会去掉路径重试，并在结尾打印每个命令的真实位置。
+- `PowerShell 7` 在 winget 源里默认给的是 msix（装进 WindowsApps，无法指定路径），脚本强制 `--installer-type msi`。
+- 已安装的项直接跳过，不会把 D 盘上的安装迁移/重装到 C 盘。
 
 > ⚠️ **FFmpeg 注意**：`Gyan.FFmpeg` 的安装包托管在 GitHub，本机实测 winget 走 GitHub
 > 连接不稳（详见下方[winget 代理能力](#这台机器的-winget-代理能力是残缺的)）。
@@ -266,4 +288,4 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\finish-
 | `curl --proxy` 直接下载 | **33 秒**完成 245MB |
 
 **结论**：凡是从 GitHub 拉包的场景，用 curl 走代理 + 手动解压，比 winget 靠谱得多。
-`ffmpeg.winget`（Gyan.FFmpeg）在这台机器上有同样的风险，configure 失败时用 curl 直下兜底。
+`toolchain.winget` 里的 `Gyan.FFmpeg` 在这台机器上有同样的风险，configure 失败时用 curl 直下兜底。

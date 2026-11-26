@@ -2,21 +2,55 @@
 # 开发基础工具链配置（替代 windows-dev-setup.ps1 的安装职责）
 # 包含: PowerShell 7 / Git / Git LFS / gsudo
 # 应用: winget configure -f configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
+#
+# ── 安装路径：本文件做不到，请用 install-devtools.ps1 ────────────────────
+#   WinGetPackage 资源只接受 id / source / version / ensure / matchOption / useLatest / installMode
+#   （见 Microsoft.WinGet.DSC.psm1 的 class WinGetPackage），没有路径参数，声明式配置表达不了"装到 D 盘"。
+#   需要控制落盘位置时改用同目录脚本（内部走 winget install --location）：
+#       gsudo pwsh -NoProfile -File .\install-wsl-kali\configurations\install-devtools.ps1
+#   策略：D 盘存在 → D:\<App>；D 盘不可用 → C:\Program Files\<App>；-BaseDir 可覆盖，-SkipLocation 关掉路径参数。
+#   本文件仍保留为幂等兜底：已装的项全部跳过，不会把 D 盘上的安装重装回 C 盘。
+#
+# ── 提权提示：下载段 / 安装段要求不同，别混在一起看 ──────────────────────
+# 下载段（不需要管理员）:
+#   - 首次运行 winget configure 会先拉取 DSC 资源模块 Microsoft.WinGet.DSC，
+#     缓存在用户目录（无需提权），前提是能访问 PSGallery 与 winget 源。
+#   - 安装包与清单缓存在 %LOCALAPPDATA%\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe，
+#     同属用户级，下载阶段即使不提权也能完成。
+# 安装段（必须管理员）:
+#   - 下面每一项都标了 directives.securityContext: elevated，且这 4 个包按机器级
+#     （Program Files / HKLM）安装，非管理员会话不会静默退化到用户级，而是直接失败。
+#     （用 install-devtools.ps1 装到 D 盘同样是机器级安装，依旧需要管理员。）
+#   - winget 会为提升段请求 UAC：通常整份配置弹一次，个别情况下每项各弹一次，
+#     连续点"是"即可；中途拒掉任意一次，对应项会失败（其余项继续）。
+#   - 若同时用了 --disable-interactivity 且当前终端并非管理员，缺少 UAC 交互时会很快
+#     返回非 0，现象是"没装任何东西也没报错"，此时改用管理员终端重跑即可。
+# 提权方式（任选其一）:
+#   a) Win+X → 终端(管理员)，再执行上面的应用命令
+#   b) 用 gsudo 前置（gsudo 本身是本文件第 4 项，首次需手动装或已存在）
+#      gsudo winget configure -f configurations\devtools.winget --accept-configuration-agreements --disable-interactivity
+#
+# 装完复核（务必新开一个终端，让新 PATH 生效）:
+#   $PSVersionTable.PSVersion        → 7.x
+#   Get-Command git, git-lfs, gsudo -ErrorAction SilentlyContinue
+#   foreach ($id in 'Microsoft.PowerShell','Git.Git','GitHub.GitLFS','gerardog.gsudo') { winget list --id $id }
+#
+# 注意: Git LFS 依赖 Git，顺序不可调换；重复运行幂等，已装且版本一致时自动跳过。
 properties:
   configurationVersion: 0.2.0
   resources:
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: pwsh7
       directives:
-        description: 安装 PowerShell 7
+        description: 安装 PowerShell 7（机器级安装，需 UAC 提权）
         securityContext: elevated
       settings:
-        id: PowerShell.PowerShell
+        id: Microsoft.PowerShell   # 注意：不是 PowerShell.PowerShell（后者在 winget 源里不存在）
         source: winget
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: git
       directives:
-        description: 安装 Git
+        description: 安装 Git（机器级安装，需 UAC 提权；Git LFS 的前置）
         securityContext: elevated
       settings:
         id: Git.Git
@@ -24,15 +58,15 @@ properties:
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: gitlfs
       directives:
-        description: 安装 Git LFS
+        description: 安装 Git LFS（机器级安装，需 UAC 提权，依赖上一项 Git）
         securityContext: elevated
       settings:
-        id: Git.GitLFS
+        id: GitHub.GitLFS         # 注意：不是 Git.GitLFS（后者在 winget 源里不存在）
         source: winget
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: gsudo
       directives:
-        description: 安装 gsudo（命令级提权）
+        description: 安装 gsudo（命令级提权工具，机器级安装，需 UAC 提权）
         securityContext: elevated
       settings:
         id: gerardog.gsudo

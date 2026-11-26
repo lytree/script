@@ -41,24 +41,25 @@ cd F:\Code\github\script
 ## 第 2 步：WSL 平台安装
 
 1. 检测 WSL 组件状态（已就绪则整段跳过）
-2. dism 启用 `VirtualMachinePlatform` / `Microsoft-Windows-Subsystem-Linux` 功能
+2. dism 启用 `VirtualMachinePlatform` / `Microsoft-Windows-Subsystem-Linux` 功能（脚本直接调用 dism，**不用 winget configure，也没有 `wsl.winget` 配置文件**）
    - 返回 3010 = 功能已启用但需重启生效
-3. 安装新版 WSL 运行时（优先 winget configure 的 `wsl.winget`，失败回退 `wsl --install --no-distribution`，Store 下载失败再走 `--web-download`）
+3. 安装新版 WSL 运行时：`wsl --install --no-distribution` → 失败则 `wsl --update` → `wsl --update --web-download` → 最后回退 `winget install Microsoft.WSL`
+4. 平台就绪后自动执行 `wsl --set-default-version 2`
 
 **需要重启时**：脚本注册登录恢复计划任务 `WslKaliInstallResume` → 自动重启（除非 `-NoReboot`）→ 重启登录后自动以非交互模式继续剩余步骤，装完任务自清理。**重启后无需手动做任何事。**
 
 ## 第 3 步：.NET SDK 10
 
 1. `dotnet --list-sdks` 已有 10.x → 跳过
-2. 依次尝试：`dotnet.winget`（configure）→ `winget install Microsoft.DotNet.SDK.10` → 官方 `dotnet-install.ps1`
+2. 依次尝试：`toolchain.winget`（configure，与 FFmpeg / fnm / uv 合并为一份）→ `winget install Microsoft.DotNet.SDK.10` → 官方 `dotnet-install.ps1`
 3. 装完自动把安装目录加入系统 PATH，当前会话立即可用
 
 ## 第 4 步：Python uv + Node fnm
 
 uv 和 fnm **各自独立安装**，一个失败不影响另一个：
 
-- **uv**：已装检测 → `uv.winget`（configure）→ `winget install astral-sh.uv` → astral.sh 官方脚本（装到 `~\.local\bin`）
-- **fnm**：已装检测 → `fnm.winget`（configure）→ `winget install Schniz.fnm` → GitHub Release 下载解压到 `%LOCALAPPDATA%\fnm`
+- **uv**：已装检测 → `toolchain.winget`（configure，与 .NET / FFmpeg / fnm 合并为一份，默认安装）→ `winget install astral-sh.uv` → astral.sh 官方脚本（装到 `~\.local\bin`）
+- **fnm**：已装检测 → `toolchain.winget`（configure，与 .NET / FFmpeg / uv 合并为一份，默认安装）→ `winget install Schniz.fnm` → GitHub Release 下载解压到 `%LOCALAPPDATA%\fnm`
 - fnm 装完会询问是否把 `fnm env --use-on-cd` 初始化写入 PowerShell Profile（默认是；Profile 已含则跳过）
 
 ## 第 5 步：Windows 开发者设置
@@ -69,13 +70,16 @@ uv 和 fnm **各自独立安装**，一个失败不影响另一个：
 4. 默认档包含**启用远程桌面**（含防火墙规则）——不需要远程访问的机器请选"全部档"之外考虑，或事后手动关闭远程桌面
 5. 结束后询问是否立即重启资源管理器（HKCU Explorer 项需重启 explorer 生效，屏幕会闪一下）
 
-## 第 6 步：Kali Linux
+## 第 6 步：WSL 磁盘存储位置 + Kali Linux
 
-1. **交互选择安装路径**：列出各盘可用空间、推荐非系统盘；输入预设编号或自定义路径
-   - 校验：盘符存在、空间 ≥ 20 GB（不足警告确认）、目录非空需确认
-   - 参数直跑时用 `-KaliPath` 免去此步
-2. 安装：WSL ≥ 2.4.4 直接 `wsl --install -d kali-linux --location <路径>` 装到指定目录；旧版先普通安装再 `wsl --manage kali-linux --move` 迁移
+1. **确定 WSL 磁盘存储位置**（这一步在 WSL 安装前就会询问，重启恢复任务沿用同一路径）：
+   - 交互：列出各盘可用空间、推荐非系统盘；输入预设编号或自定义路径
+   - 免交互：`-WslPath D:\WSL`（根目录，发行版落在 `D:\WSL\kali-linux`）或 `-KaliPath D:\WSL\kali-linux`（完整路径，优先）
+   - 校验：盘符存在、空间 ≥ 20 GB（不足警告确认）、目录非空需确认；脚本只创建父目录，发行版目录交给 WSL 创建
+2. 安装 Kali：WSL ≥ 2.4.4 直接 `wsl --install -d kali-linux --location <路径>` 装到自定义目录；旧版先普通安装再 `wsl --manage kali-linux --move <路径>` 迁移
 3. Store 下载失败自动走 `--web-download`
+4. Kali 已存在但不在目标位置时，会询问是否迁移磁盘（非交互模式只提示不迁移）
+5. 结束打印各发行版实际磁盘目录（读注册表 `HKCU\...\Lxss`），确认自定义位置已生效
 
 ## 第 7 步：安装后验证
 
@@ -92,11 +96,13 @@ uv python install 3.14   # （可选）安装 Python 解释器
 ## 非交互 / 无人值守安装
 
 ```powershell
-.\install-wsl-kali\install_wsl_kali.ps1 -Install All -KaliPath D:\WSL\kali-linux -NonInteractive
+.\install-wsl-kali\install_wsl_kali.ps1 -Install All -WslPath D:\WSL -NonInteractive
 ```
 
-- 全部交互点采用默认值（设置走默认档、fnm Profile 自动写入、不重启 explorer）
+- 全部交互点采用默认值（设置走默认档、fnm Profile 自动写入、不重启 explorer、不迁移已有磁盘）
+- `-WslPath` 指定 WSL 磁盘根目录；也可以用 `-KaliPath D:\WSL\kali-linux` 直接给完整路径
 - `-NoReboot`：需重启时不自动重启，手动重启后恢复任务照常续装
+- 恢复任务会原样带上 `-Install`、`-WslPath` / `-KaliPath` 等参数，续装不会丢失自定义磁盘位置
 
 ## 中断与重试
 

@@ -26,8 +26,8 @@ function Install-DotNetSdk {
         return
     }
 
-    # 路径 0: winget configure（configurations/dotnet.winget）
-    if ((Invoke-WingetConfiguration 'dotnet') -eq 0) {
+    # 路径 0: winget configure（configurations/toolchain.winget，已合并 dotnet/ffmpeg/fnm/uv）
+    if ((Invoke-WingetConfiguration 'toolchain') -eq 0) {
         Add-PathDirectory -Dir (Join-Path $env:ProgramFiles 'dotnet')
         if (Test-DotNetSdkInstalled) {
             Write-Info '.NET SDK 安装完成（winget configure）。'

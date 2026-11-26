@@ -8,19 +8,22 @@
 #   .\install-wsl-kali\install_wsl_kali.ps1 -Install ToolsOnly       # 仅装 Python uv + Node fnm
 #   .\install-wsl-kali\install_wsl_kali.ps1 -Install SettingsOnly    # 仅应用 Windows 开发者设置
 #   .\install-wsl-kali\install_wsl_kali.ps1 -Install All -KaliPath D:\WSL\kali-linux -NonInteractive
+#   .\install-wsl-kali\install_wsl_kali.ps1 -Install All -WslPath D:\WSL -NonInteractive   # 自定义 WSL 磁盘根目录
 #   .\install-wsl-kali\install_wsl_kali.ps1 -Install All -SkipWingetConfig   # 跳过 winget configure 路径
 # 模块结构:
 #   _common.ps1           公共辅助（输出/交互/提权/进程/winget/winget configure/PATH/重启恢复）
-#   _wsl.ps1              WSL 平台安装
-#   _kali.ps1             Kali 安装（含交互式路径选择）
+#   _wsl.ps1              WSL 平台安装（dism 启用功能 + wsl --install/--update，纯 PowerShell）
+#   _kali.ps1             WSL 磁盘存储位置（自定义/迁移）+ Kali 安装
 #   _dotnet.ps1           .NET SDK 安装
 #   _tools.ps1            Python uv + Node fnm 安装
 #   _windows-settings.ps1 Windows 开发者设置
 #   configurations/*.winget  winget configure 声明式配置
-#                            （wsl / dotnet / uv / fnm 用 schema 0.2；windows-default/windows-full 用 DSC v3 原生 Registry 资源）
+#                            （toolchain 等用 schema 0.2；windows-default/windows-full 用 DSC v3 原生 Registry 资源）
 # 说明:
 #   - 脚本幂等，可重复运行，已完成的步骤会自动跳过
-#   - 安装优先走 winget configure（.winget 配置，声明式/幂等），失败自动回退 winget install / 官方脚本
+#   - WSL 不走 winget configure：脚本直接用 dism + wsl.exe 处理，失败再回退 winget install Microsoft.WSL
+#   - 其余组件优先走 winget configure（.winget 配置，声明式/幂等），失败自动回退 winget install / 官方脚本
+#   - WSL 磁盘位置可自定义（-WslPath 根目录 / -KaliPath 完整路径 / 交互选择），已安装发行版可迁移
 #   - WSL 组件安装后如需重启，会注册一个登录恢复计划任务，重启后自动继续安装
 #   - 需要管理员权限运行（未提权时会自动请求 UAC）
 # 注意: 本脚本仅支持 PowerShell 7+（pwsh），不支持 Windows PowerShell 5.1
@@ -31,7 +34,8 @@
 param(
     [ValidateSet('All', 'WslOnly', 'KaliOnly', 'DotNetOnly', 'ToolsOnly', 'SettingsOnly')]
     [string]$Install,
-    [string]$KaliPath = '',
+    [string]$KaliPath = '',      # Kali 虚拟磁盘完整目录（如 D:\WSL\kali-linux）
+    [string]$WslPath  = '',      # WSL 磁盘根目录（如 D:\WSL → 发行版落在 D:\WSL\<发行版名>）
     [switch]$NonInteractive,
     [switch]$NoReboot,
     [switch]$SkipWingetConfig   # 跳过 winget configure（configurations/*.winget），直接用安装命令
@@ -82,7 +86,13 @@ Remove-ResumeTask   # 本次运行若由恢复任务唤起，先清理旧任务
 try {
     $action = $Install
     if (-not $action) { $action = Show-MainMenu }
+    $Script:InstallAction = $action
     Write-Info "安装计划: $action"
+
+    # 提前确定 WSL 磁盘位置：重启恢复任务会沿用同一路径，避免重启后落到默认目录
+    if ($action -in @('All', 'KaliOnly')) {
+        $Script:DistroTargetPath = Resolve-WslDistroPath
+    }
 
     if ($action -in @('All', 'WslOnly')) {
         Install-WslPlatform   # 若需要重启，函数内会安排恢复任务并抛出
@@ -101,8 +111,8 @@ try {
     }
 
     if ($action -in @('All', 'KaliOnly')) {
-        $kaliTarget = Resolve-KaliInstallPath
-        Install-Kali -TargetPath $kaliTarget
+        Install-Kali -TargetPath $Script:DistroTargetPath
+        Show-WslStorageInfo
     }
 
     Write-Info ''

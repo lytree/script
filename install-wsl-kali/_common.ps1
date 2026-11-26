@@ -10,7 +10,10 @@ $Script:DotNetSdkId      = 'Microsoft.DotNet.SDK.10'   # 仓库底座是 .NET 10
 $Script:DotNetChannel    = '10.0'
 $Script:UvPkgId          = 'astral-sh.uv'
 $Script:FnmPkgId         = 'Schniz.fnm'
-$Script:UseWingetConfig  = $true   # 优先用 winget configure + configurations/*.winget（-SkipWingetConfig 关闭）
+$Script:UseWingetConfig  = $true   # 优先用 winget configure + configurations/*.winget（-SkipWingetConfig 关闭；WSL 不走 configure）
+$Script:AppliedConfigurations = @{}  # 本次运行已成功应用的配置名（如 toolchain），避免同一份配置重复执行
+$Script:InstallAction    = ''      # 本次实际执行的安装范围（菜单选择后回填，供重启恢复任务使用）
+$Script:DistroTargetPath = ''      # 已确定的 WSL 发行版磁盘位置（重启恢复任务沿用同一路径）
 
 # ---------------- 输出与交互 ----------------
 function Write-Info  { param([string]$Msg) Write-Host $Msg -ForegroundColor Cyan }
@@ -51,6 +54,7 @@ function Assert-Admin {
     Write-Warn2 '此脚本需要管理员权限，正在请求 UAC 提权...'
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
     if ($Install)          { $argList += @('-Install', $Install) }
+    if ($WslPath)          { $argList += @('-WslPath', "`"$WslPath`"") }
     if ($KaliPath)         { $argList += @('-KaliPath', "`"$KaliPath`"") }
     if ($NonInteractive)   { $argList += '-NonInteractive' }
     if ($NoReboot)         { $argList += '-NoReboot' }
@@ -138,6 +142,11 @@ function Invoke-WingetConfiguration {
     # 返回退出码：0 = 已达成期望状态（幂等，重复运行只改缺失项）；-1 = 不可用
     param([Parameter(Mandatory)][string]$Name)
     if (-not $Script:UseWingetConfig) { return -1 }
+    if ($Script:AppliedConfigurations.ContainsKey($Name)) {
+        # 同一份配置（如 toolchain）被多个组件共用时，本次运行内只执行一次
+        Write-Dim "$Name.winget 本次运行已应用过，跳过重复执行。"
+        return 0
+    }
     if (-not (Test-ToolOnPath 'winget.exe')) {
         Write-Dim '未找到 winget，跳过 winget configure 路径。'
         return -1
@@ -153,6 +162,7 @@ function Invoke-WingetConfiguration {
         -ArgumentList 'configure', '-f', "`"$configFile`"", '--accept-configuration-agreements', '--disable-interactivity' `
         -NoNewWindow -Wait -PassThru
     if ($proc.ExitCode -eq 0) {
+        $Script:AppliedConfigurations[$Name] = $true
         # 刷新会话 PATH，保证新装命令在当前会话可检测
         $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                     [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -198,13 +208,22 @@ function Remove-ResumeTask {
 
 function Register-ResumeTask {
     Remove-ResumeTask
-    $action   = New-ScheduledTaskAction -Execute (Get-Process -Id $PID).Path `
-                  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Install $Install -NonInteractive" + `
-                  ($(if ($SkipWingetConfig) { ' -SkipWingetConfig' } else { '' })) `
-                  -WorkingDirectory (Split-Path -Parent $PSCommandPath)
+    # 恢复任务要沿用当前运行的选择：安装范围 + 已确定的 WSL 磁盘位置 + 交互/重启偏好
+    $installScope = $Script:InstallAction ? $Script:InstallAction : $Install
+    if (-not $installScope) { $installScope = 'All' }   # 兜底：避免恢复任务绑定到空 -Install 而启动失败
+    $targetPath   = $Script:DistroTargetPath ? $Script:DistroTargetPath : $KaliPath
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Install', $installScope, '-NonInteractive')
+    if ($targetPath) { $argList += @('-KaliPath', "`"$targetPath`"") }
+    if ($WslPath)          { $argList += @('-WslPath', "`"$WslPath`"") }
+    if ($SkipWingetConfig) { $argList += '-SkipWingetConfig' }
+    if ($NoReboot)         { $argList += '-NoReboot' }
+
+    $taskAction = New-ScheduledTaskAction -Execute (Get-Process -Id $PID).Path `
+                    -Argument ($argList -join ' ') `
+                    -WorkingDirectory (Split-Path -Parent $PSCommandPath)
     $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
-    Register-ScheduledTask -TaskName $Script:ResumeTaskName -Action $action -Trigger $trigger `
+    Register-ScheduledTask -TaskName $Script:ResumeTaskName -Action $taskAction -Trigger $trigger `
         -Settings $settings -Description 'WSL+Kali 安装重启后自动继续' -Force | Out-Null
     Write-Dim "已注册恢复任务 $Script:ResumeTaskName（下次登录自动继续安装）。"
 }
