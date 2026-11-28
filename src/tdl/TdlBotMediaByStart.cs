@@ -25,12 +25,13 @@
 //   dotnet run src/tdl/TdlBotMediaByStart.cs -- --chat @haoren004_bot --no-proxy
 //
 // 运行时 HTTP API (多进程共享同一个 TDLib 会话, 避免多个进程抢 ~/.tdl/db):
-//   dotnet run src/tdl/TdlBotMediaByStart.cs -- --serve --port 8788 [--max-jobs 4]
+//   dotnet run src/tdl/TdlBotMediaByStart.cs -- --serve --port 8788 [--max-jobs 1]
+//   任务默认进同步队列: 一次只跑一个, 按提交顺序排队; --max-jobs N (N>1) 才并行
+//   想在同一个请求里等到下载结束: POST /jobs 里加 "wait": true, 响应直接返回最终快照
 //   curl http://127.0.0.1:8788/health
 //   curl "http://127.0.0.1:8788/chats?q=jijizhiijia_bot"
 //   curl -X POST http://127.0.0.1:8788/preview -d "{\"chat\":\"@haoren004_bot\"}"
 //   curl -X POST http://127.0.0.1:8788/jobs -d "{\"chat\":\"@haoren004_bot\",\"types\":\"Photo,Video\"}"
-//   同一聊天想更快: 按段切片提交多个任务, 它们会并行跑
 //   curl -X POST http://127.0.0.1:8788/jobs -d "{\"chat\":\"@x_bot\",\"segmentFrom\":0,\"segmentTo\":120}"
 //   curl http://127.0.0.1:8788/jobs/<jobId>
 //   curl http://127.0.0.1:8788/jobs/<jobId>/files
@@ -65,7 +66,7 @@ async Task Main(string[] args)
     var optChat = new Option<string?>("--chat") { Description = "目标: t.me 链接 / @username / ChatId (--serve 模式下可省略)" };
     var optServe = new Option<bool>("--serve") { Description = "启动常驻 HTTP 运行时 API, 供多个进程提交/查询下载任务" };
     var optPort = new Option<int>("--port") { DefaultValueFactory = _ => 8788, Description = "HTTP API 监听端口 (仅绑定 127.0.0.1)" };
-    var optMaxJobs = new Option<int>("--max-jobs") { DefaultValueFactory = _ => 4, Description = "同时执行的下载任务数上限 (并行度)" };
+    var optMaxJobs = new Option<int>("--max-jobs") { DefaultValueFactory = _ => 1, Description = "同时执行的下载任务数上限: 1(默认)=同步队列, 任务按提交顺序逐个跑; >1 才并行" };
     var optOutput = new Option<string?>("--output") { Description = "输出根目录 (默认 data/tdl/by-start/<chatId>)" };
     var optConcurrency = new Option<int>("--concurrency") { DefaultValueFactory = _ => 4, Description = "并发下载数 (1-16)" };
     var optTypes = new Option<string?>("--types") { Description = "只下载指定类型, 逗号分隔 (Photo,Video,Document,Animation,Audio,VoiceNote,VideoNote); 默认全部" };
@@ -139,7 +140,10 @@ async Task Main(string[] args)
 
     // ── 1. 启动 TDLib ────────────────────────────────────────────
     using var client = new TdJsonClient();
-    client.Send("{\"@type\":\"setLogVerbosityLevel\",\"new_verbosity_level\":0}");
+    // TDLib 内部日志级别: 默认 0 静默; 排查连接/登录问题时可设 env tdl_tdlib_verbose=1~5
+    var tdlibVerbose = int.TryParse(Environment.GetEnvironmentVariable("tdl_tdlib_verbose"), out var lv)
+        ? Math.Clamp(lv, 0, 5) : 0;
+    client.Send("{\"@type\":\"setLogVerbosityLevel\",\"new_verbosity_level\":" + tdlibVerbose + "}");
 
     var loop = new EventLoop(client);
     loop.Start();
@@ -300,9 +304,17 @@ bool InitTdlib(EventLoop loop, bool noProxy, string? proxyArg)
     if (!noProxy)
     {
         var (host, port) = GetProxy(proxyArg);
-        LogInfo($"启用代理 {host}:{port}");
+        // 代理类型: env tdl_proxy_type = socks5 (默认) / http / mtproto
+        var proxyType = (Environment.GetEnvironmentVariable("tdl_proxy_type") ?? "socks5").Trim().ToLowerInvariant();
+        var typeJson = proxyType switch
+        {
+            "http" => "{\"@type\":\"proxyTypeHttp\",\"username\":\"\",\"password\":\"\",\"http_only\":false}",
+            "mtproto" => "{\"@type\":\"proxyTypeMtproto\",\"secret\":\"\"}",
+            _ => "{\"@type\":\"proxyTypeSocks5\",\"username\":\"\",\"password\":\"\"}",
+        };
+        LogInfo($"启用代理 {host}:{port} ({proxyType})");
         loop.Send("{\"@type\":\"addProxy\",\"server\":\"" + host + "\",\"port\":" + port +
-                  ",\"type\":{\"@type\":\"proxyTypeSocks5\",\"username\":\"\",\"password\":\"\"},\"enable\":true}");
+                  ",\"type\":" + typeJson + ",\"enable\":true}");
     }
     else
     {
@@ -1044,8 +1056,8 @@ async Task ServeAsync(EventLoop loop, int port, string? defaultOutput,
     int defConcurrency, bool defOverwrite, int defPriority, bool noMeta, int maxJobs)
 {
     var jobs = new ConcurrentDictionary<string, ServerJob>(StringComparer.OrdinalIgnoreCase);
-    // 多任务并行: 允许 maxJobs 个下载任务同时跑 (每个任务内部还有自己的 concurrency),
-    // TDLib 只有一个客户端, 但 RpcAsync 是按 @extra 分发响应的, 多线程并发请求是安全的。
+    // 同步队列: 默认 max-jobs=1, 任务按提交顺序排队, 前一个跑完才起下一个 (SemaphoreSlim 的异步等待按 FIFO 唤醒)。
+    // 传 --max-jobs N (N>1) 才允许 N 个任务并行; 每个任务内部还能各自开 concurrency 路下载。
     var queue = new SemaphoreSlim(maxJobs, maxJobs);
     var startedAt = DateTime.Now;
     var jsonOpts = new JsonSerializerOptions
@@ -1397,9 +1409,18 @@ async Task ServeAsync(EventLoop loop, int port, string? defaultOutput,
                         var jobMaxMsgs = Math.Max(0, Int(root, "maxMessages") ?? 0);
                         var jobSegFrom = Math.Max(0, Int(root, "segmentFrom") ?? 0);
                         var jobSegTo = Math.Max(0, Int(root, "segmentTo") ?? 0);   // 0 = 到末尾
+                        var jobWait = Bool(root, "wait") ?? Bool(root, "sync") ?? false;
 
                         jobs[job.Id] = job;
-                        _ = Task.Run(() => RunJobAsync(job, jobConcurrency, jobOverwrite, jobPriority, jobMax, jobMaxMsgs, jobSegFrom, jobSegTo));
+                        var runTask = Task.Run(() => RunJobAsync(job, jobConcurrency, jobOverwrite, jobPriority, jobMax, jobMaxMsgs, jobSegFrom, jobSegTo));
+
+                        if (jobWait)
+                        {
+                            // 同步模式: 请求挂到任务结束, 直接返回最终快照 (耗时任务记得加大客户端超时)
+                            await runTask;
+                            await WriteJsonAsync(stream, 200, Snapshot(job));
+                            return;
+                        }
 
                         await WriteJsonAsync(stream, 202, new
                         {

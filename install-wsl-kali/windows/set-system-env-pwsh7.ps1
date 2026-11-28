@@ -1,5 +1,4 @@
-﻿#Requires -Version 7.0
-<#
+﻿<#
 .SYNOPSIS
     用 PowerShell 7 写入【系统级】环境变量（Machine scope）。
 
@@ -11,10 +10,33 @@
 
 .PARAMETER DryRun
     只打印将要执行的动作，不实际写入。
+
+.PARAMETER Group
+    只处理指定分组，可单选、逗号分隔多选：uv / toolchain / node / all（默认 all）。
+    uv        = UV_PYTHON_INSTALL_DIR、UV_CACHE_DIR、UV_TOOL_DIR、UV_TOOL_BIN_DIR
+    toolchain = VCPKG_ROOT、MAVEN_HOME、JAVA_HOME、NODE_HOME
+    node      = NPM_CONFIG_PREFIX
+
+    加这个参数是为了避免连带影响：本机的全量目标是 JAVA_HOME=jdk-25.0.3+9，
+    而实际在用 jdk21 —— 只想补 uv 的时候不该把 Java 一起改掉。
+
+.EXAMPLE
+    .\set-system-env-pwsh7.ps1 -Group uv
+    只写 uv 那 4 个变量，并把 E:\python\tool\bin 补进系统 PATH。
+
+.EXAMPLE
+    .\set-system-env-pwsh7.ps1 -Group uv,node -DryRun
+    先看 uv + node 两组要改什么，不实际写入。
 #>
+
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [switch] $DryRun
+    [switch] $DryRun,
+
+    # 不用 ValidateSet：-File 方式调用时 `-Group uv,node` 会被当成单个字符串 "uv,node"，
+    # ValidateSet 会直接拒掉。这里先收下，再手工按逗号拆分校验。
+    [string[]] $Group = @('all')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,8 +66,12 @@ L "PowerShell $($PSVersionTable.PSVersion)  ($([Environment]::OSVersion.VersionS
 L "管理员权限：$isAdmin"
 
 if (-not $isAdmin) {
-    L '当前不是管理员，无法写系统级环境变量。请右键以管理员身份重新运行。' -Level Err
-    exit 2
+    if ($DryRun) {
+        L '非管理员 + -DryRun：只预演不写入，可以继续。' -Level Warn
+    } else {
+        L '当前不是管理员，无法写系统级环境变量。请右键以管理员身份重新运行（或先加 -DryRun 预演）。' -Level Err
+        exit 2
+    }
 }
 
 # ----------------------------------------------------------------------------------
@@ -66,17 +92,37 @@ $envSpecs = @(
     [pscustomobject]@{ Name = 'NPM_CONFIG_PREFIX'; Value = 'E:\node\modules'; OnPath = $true; Group = 'node' }
 )
 
-# 需要额外放进 PATH 的目录（bin 之外）
+# ----------------------------------------------------------------------------------
+# 1.1 分组筛选（-Group）
+# ----------------------------------------------------------------------------------
+$allGroups = @($envSpecs | ForEach-Object { $_.Group } | Select-Object -Unique)
+$Group = @($Group | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($Group.Count -eq 0) { $Group = @('all') }
+$selectedGroups = if ($Group -contains 'all') { $allGroups } else { @($Group | Select-Object -Unique) }
+$unknown = @($selectedGroups | Where-Object { $allGroups -notcontains $_ })
+if ($unknown.Count -gt 0) {
+    L ("未知分组：{0}（可用：{1}）" -f ($unknown -join ', '), ($allGroups -join ', ')) -Level Err
+    exit 1
+}
+$envSpecs = @($envSpecs | Where-Object { $selectedGroups -contains $_.Group })
+L ("生效分组：{0} —— 共 {1} 个变量" -f ($selectedGroups -join ', '), $envSpecs.Count) -Level Info
+if ($envSpecs.Count -eq 0) {
+    L '筛选后没有任何变量，退出。' -Level Err
+    exit 1
+}
+
+# 需要额外放进 PATH 的目录（bin 之外），带分组，便于 -Group 过滤
 $extraPathEntries = @(
-    'E:\CPP\vcpkg'
-    'E:\Java\apache-maven-3.6.3\bin'
-    'E:\Java\jdk-25.0.3+9\bin'
-    'E:\nodejs'
+    [pscustomobject]@{ Path = 'E:\CPP\vcpkg'; Group = 'toolchain' }
+    [pscustomobject]@{ Path = 'E:\Java\apache-maven-3.6.3\bin'; Group = 'toolchain' }
+    [pscustomobject]@{ Path = 'E:\Java\jdk-25.0.3+9\bin'; Group = 'toolchain' }
+    [pscustomobject]@{ Path = 'E:\nodejs'; Group = 'toolchain' }
     # npm 全局包区：eslint / hexo / tsx / asar / nrm / pnpm 等全局命令的 shim 都在这里，
     # 不加进 PATH 的话这些命令全部调不出来（Node 本体目录里只有 node/npm/npx/corepack）
-    'E:\node\modules'
-    'E:\python\tool\bin'
+    [pscustomobject]@{ Path = 'E:\node\modules'; Group = 'node' }
+    [pscustomobject]@{ Path = 'E:\python\tool\bin'; Group = 'uv' }
 )
+$extraPathEntries = @($extraPathEntries | Where-Object { $selectedGroups -contains $_.Group })
 
 # 用户级同名变量需要清理的清单（提升到系统级后，用户级会遮蔽系统级）
 $shadowedNames = $envSpecs.Name
@@ -134,8 +180,11 @@ try {
 
     $targets = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $envSpecs) { if ($s.OnPath) { $targets.Add($s.Value) } }
-    foreach ($e in $extraPathEntries) { $targets.Add($e) }
+    foreach ($e in $extraPathEntries) { $targets.Add($e.Path) }
+    # UV_TOOL_BIN_DIR 同时出现在 envSpecs(OnPath) 与 extraPathEntries 里，去重避免重复追加
+    $targets = @($targets | Select-Object -Unique)
 
+    $added = 0
     foreach ($t in $targets) {
         $norm = $t.Trim().TrimEnd('\')
         if ($items | Where-Object { $_.TrimEnd('\').ToLowerInvariant() -eq $norm.ToLowerInvariant() }) {
@@ -147,9 +196,14 @@ try {
             $items.Add($norm)
             L "PATH 追加：$norm" -Level Ok
         }
+        $added++
     }
 
-    if (-not $DryRun) {
+    if ($DryRun) {
+        # nothing
+    } elseif ($items.Count -eq $before -and $added -eq 0) {
+        L '系统 PATH 无需变更（无重复项、无缺失项）' -Level Ok
+    } else {
         $newPath = $items -join ';'
         [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
         L ("系统 PATH：{0} -> {1} 项" -f $before, $items.Count) -Level Ok
@@ -200,6 +254,11 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
 # ----------------------------------------------------------------------------------
 # 6. 回读校验
 # ----------------------------------------------------------------------------------
+if ($DryRun) {
+    L '（DryRun 预演结束，未写入任何内容，跳过回读断言）' -Level Ok
+    exit 0
+}
+
 L '回读校验…' -Level Info
 $bad = 0
 foreach ($s in $envSpecs) {
@@ -216,9 +275,12 @@ foreach ($s in $envSpecs) {
 $mp = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 L ("  系统 PATH 共 {0} 项，{1} 字符" -f (($mp -split ';' | Where-Object { $_ }).Count), $mp.Length) -Level Info
 
-# PATH 关键项抽查
+# PATH 关键项抽查（跟随 -Group：只查本次涉及的分组）
 L 'PATH 关键项抽查…' -Level Info
-$mustHave = @('E:\nodejs', 'E:\node\modules', 'E:\python\tool\bin')
+$mustHave = @()
+$mustHave += @($envSpecs | Where-Object { $_.OnPath } | ForEach-Object { $_.Value })
+$mustHave += @($extraPathEntries | ForEach-Object { $_.Path })
+$mustHave = @($mustHave | Select-Object -Unique)
 foreach ($m in $mustHave) {
     $inPath = @(($mp -split ';') | Where-Object { $_.Trim().TrimEnd('\').ToLowerInvariant() -eq $m.TrimEnd('\').ToLowerInvariant() }).Count -gt 0
     $dirOk = Test-Path -LiteralPath $m

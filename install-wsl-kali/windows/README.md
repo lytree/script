@@ -59,7 +59,7 @@ gsudo pwsh -NoProfile -File .\install-wsl-kali\configurations\install-devtools.p
 
 | 脚本 | 作用 | 管理员 |
 | --- | --- | --- |
-| [`set-system-env-pwsh7.ps1`](set-system-env-pwsh7.ps1) | 把 9 个环境变量写成**系统级**（Machine scope） | 需 |
+| [`set-system-env-pwsh7.ps1`](set-system-env-pwsh7.ps1) | 把 9 个环境变量写成**系统级**（Machine scope），支持 `-Group uv/toolchain/node` 分组 + `-DryRun` 预演 | 需 |
 | [`irfanview-assoc.ps1`](irfanview-assoc.ps1) | IrfanView 图片关联（45 种格式），可撤销（原 `.bat` 的 pwsh 7 移植版） | 否 |
 | [`potplayer-assoc.ps1`](potplayer-assoc.ps1) | PotPlayer 视频关联（43 种格式），自动探测 exe，可撤销 | 否 |
 
@@ -86,32 +86,46 @@ gsudo pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\s
 
 ## 环境变量（系统级）
 
-`set-system-env-pwsh7.ps1` 写入的 9 个变量，**当前已全部生效**：
+`set-system-env-pwsh7.ps1` 写入的 9 个变量，按 `-Group` 分三组：
 
-| 变量 | 值 | 进 PATH |
-| --- | --- | --- |
-| `UV_PYTHON_INSTALL_DIR` | `E:\python\install` | — |
-| `UV_CACHE_DIR` | `E:\python\cache` | — |
-| `UV_TOOL_DIR` | `E:\python\tool` | — |
-| `UV_TOOL_BIN_DIR` | `E:\python\tool\bin` | ✔ |
-| `VCPKG_ROOT` | `E:\CPP\vcpkg` | ✔ |
-| `MAVEN_HOME` | `E:\Java\apache-maven-3.6.3` | ✔ |
-| `JAVA_HOME` | `E:\Java\jdk-25.0.3+9` | ✔ |
-| `NODE_HOME` | `E:\nodejs` | ✔ |
-| `NPM_CONFIG_PREFIX` | `E:\node\modules` | ✔ |
+| 变量 | 值 | 进 PATH | 分组 |
+| --- | --- | --- | --- |
+| `UV_PYTHON_INSTALL_DIR` | `E:\python\install` | — | `uv` |
+| `UV_CACHE_DIR` | `E:\python\cache` | — | `uv` |
+| `UV_TOOL_DIR` | `E:\python\tool` | — | `uv` |
+| `UV_TOOL_BIN_DIR` | `E:\python\tool\bin` | ✔ | `uv` |
+| `VCPKG_ROOT` | `E:\CPP\vcpkg` | ✔ | `toolchain` |
+| `MAVEN_HOME` | `E:\Java\apache-maven-3.6.3` | ✔ | `toolchain` |
+| `JAVA_HOME` | `E:\Java\jdk-25.0.3+9` | ✔ | `toolchain` |
+| `NODE_HOME` | `E:\nodejs` | ✔ | `toolchain` |
+| `NPM_CONFIG_PREFIX` | `E:\node\modules` | ✔ | `node` |
 
 系统 PATH 额外包含：`E:\Java\apache-maven-3.6.3\bin`、`E:\Java\jdk-25.0.3+9\bin`、`E:\node\modules`、`E:\python\tool\bin`。
 
+> ⚠️ 现状（2026-11-26 核对）：**Machine 级 9 个变量全部为空**，实际由**用户级**承载
+> （`UV_*` 与 `VCPKG_ROOT`、`JAVA_HOME`、`NODE_HOME` 在 HKCU；`MAVEN_HOME`、`NPM_CONFIG_PREFIX` 两级都没有）。
+> 也就是说脚本还没成功以管理员跑过。另外本机在用的是 `jdk21`，与脚本里的 `jdk-25.0.3+9` 不一致 ——
+> 所以**不要无脑全量跑**，用 `-Group` 挑你要的那组。
+
 ```powershell
-# 已在管理员终端里
+# 全量（9 个变量，管理员终端里）
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\set-system-env-pwsh7.ps1
 
-# 先看它要干什么，不实际写入
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\set-system-env-pwsh7.ps1 -DryRun
+# 只补 uv 那 4 个变量 + E:\python\tool\bin 进 PATH（不动 JAVA_HOME / Node）
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\set-system-env-pwsh7.ps1 -Group uv
+
+# 多组：逗号分隔
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\set-system-env-pwsh7.ps1 -Group uv,node
+
+# 先看它要干什么，不实际写入（非管理员也能预演）
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\install-wsl-kali\windows\set-system-env-pwsh7.ps1 -Group uv -DryRun
 ```
 
+`-Group` 取值：`all`（默认）/ `uv` / `toolchain` / `node`；非法值直接报错退出（退出码 1）。
+`-Group` 只影响"改哪些变量/清哪些用户级同名项/追加哪些 PATH 项"，**不会**因此改动其他组的现有值。
+
 `#Requires -Version 7.0` —— **必须 pwsh 7**，不支持 5.1。
-退出码：`0` 成功 / `1` 有异常项 / `2` 非管理员。
+退出码：`0` 成功（含 `-DryRun` 预演）/ `1` 有异常项或分组非法 / `2` 非管理员且未加 `-DryRun`。
 
 ### 脚本做的四件事
 

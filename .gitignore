@@ -386,3 +386,6 @@ install-wsl-kali/windows/*kali*.ps1
 
 # WorkBuddy 工作区数据
 .workbuddy/
+
+# 本机凭证（Telegram api_id/api_hash 等）
+.secrets/
