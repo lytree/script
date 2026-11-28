@@ -100,6 +100,8 @@ public class TdlUpdateHandler
                 break;
             case TdApi.Update.UpdateAuthorizationState { AuthorizationState: TdApi.AuthorizationState.AuthorizationStateReady }:
                 logger.ZLogDebug($"授权成功，已登录");
+                AuthNeeded = false;
+                PasswordNeeded = false;
                 _readyToAuthenticate.Set();
                 _onAuthReady?.Invoke();
                 break;

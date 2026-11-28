@@ -22,11 +22,12 @@
 //   1. 检查并补齐 tdl 系列脚本依赖的环境变量 (用户级持久化):
 //        tdl_api_id / tdl_api_hash  (必填, 从 https://my.telegram.org 获取)
 //        tdl_phone / tdl_bot_token  (登录方式, 二选一)
+//        tdl_login_method           (可选, 默认登录方式, 目前支持 "qr")
 //        tdl_proxy                  (代理, 格式 host:port, 默认 127.0.0.1:7897)
 //        tdl_use_message_db         (可选, 是否启用本地消息库)
 //   2. 初始化 TDLib 会话 (~/.tdl), 完成登录并验证。
-// api_id
-
+//      支持登录方式: 手机号+验证码 / Bot Token / QR 码扫码 / Web 登录凭证 (web token)。
+//
 // 用法:
 //   dotnet run src/tdl/TdlInit.cs -- [选项]
 //
@@ -35,6 +36,8 @@
 //   dotnet run src/tdl/TdlInit.cs -- --check               # 只检查环境, 不修改
 //   dotnet run src/tdl/TdlInit.cs -- --api-id 1234 --api-hash abcdef
 //   dotnet run src/tdl/TdlInit.cs -- --phone +8613800138000
+//   dotnet run src/tdl/TdlInit.cs -- --qr                  # 本次用 QR 码扫码登录
+//   dotnet run src/tdl/TdlInit.cs -- --web-token <token> --web-dc-id 2   # Web 登录凭证登录
 //   dotnet run src/tdl/TdlInit.cs -- --proxy 127.0.0.1:7890
 // ============================================================================
 
@@ -64,6 +67,8 @@ async Task<int> Main(TdClient client, string[] args)
     var optionProxy = new Option<string?>("--proxy") { Description = "代理地址 host:port (保存为 tdl_proxy)" };
     var optionMessageDb = new Option<bool?>("--use-message-db") { Description = "启用本地消息库 (保存为 tdl_use_message_db=1)" };
     var optionQr = new Option<bool>("--qr") { Description = "本次登录强制使用 QR 码 (不影响已保存的配置)" };
+    var optionWebToken = new Option<string?>("--web-token") { Description = "Web 登录凭证 web token (本次登录用, 不保存)" };
+    var optionWebDcId = new Option<int?>("--web-dc-id") { Description = "Web 登录凭证对应的 DC 编号 (默认 2)" };
 
     var rootCommand = new RootCommand("初始化 Telegram (TDLib) 运行环境并登录");
     rootCommand.Options.Add(optionCheck);
@@ -74,6 +79,8 @@ async Task<int> Main(TdClient client, string[] args)
     rootCommand.Options.Add(optionProxy);
     rootCommand.Options.Add(optionMessageDb);
     rootCommand.Options.Add(optionQr);
+    rootCommand.Options.Add(optionWebToken);
+    rootCommand.Options.Add(optionWebDcId);
 
     var parseResult = rootCommand.Parse(args);
     if (parseResult.Errors.Count > 0)
@@ -94,6 +101,8 @@ async Task<int> Main(TdClient client, string[] args)
     var proxyArg = parseResult.GetValue(optionProxy);
     var messageDbArg = parseResult.GetValue(optionMessageDb);
     var useQr = parseResult.GetValue(optionQr);
+    var webTokenArg = parseResult.GetValue(optionWebToken);
+    var webDcIdArg = parseResult.GetValue(optionWebDcId);
 
     try
     {
@@ -101,11 +110,11 @@ async Task<int> Main(TdClient client, string[] args)
         // 1. 环境变量检查与补齐
         // ──────────────────────────────────────────────
         var (apiId, apiHash) = await EnsureApiCredentialsAsync(logger, checkOnly, apiIdArg, apiHashArg);
-        var authMethod = await EnsureAuthMethodAsync(logger, checkOnly, phoneArg, botTokenArg, useQr);
+        var authMethod = await EnsureAuthMethodAsync(logger, checkOnly, phoneArg, botTokenArg, useQr, webTokenArg, webDcIdArg);
         var (proxyHost, proxyPort) = EnsureProxyAsync(logger, checkOnly, proxyArg);
         var useMessageDb = EnsureMessageDbAsync(logger, checkOnly, messageDbArg);
 
-        PrintConfigSummary(apiId, apiHash, authMethod, proxyHost, proxyPort, useMessageDb);
+        PrintConfigSummary(apiId, apiHash, authMethod.Method, proxyHost, proxyPort, useMessageDb);
 
         if (checkOnly)
         {
@@ -122,13 +131,17 @@ async Task<int> Main(TdClient client, string[] args)
 
         if (env.AuthNeeded)
         {
-            if (authMethod == "qr")
+            switch (authMethod.Method)
             {
-                await env.AuthenticateWithQrCodeAsync();
-            }
-            else
-            {
-                await env.AuthenticateAsync();
+                case "qr":
+                    await env.AuthenticateWithQrCodeAsync();
+                    break;
+                case "web":
+                    await env.AuthenticateWithWebTokenAsync(authMethod.WebToken, authMethod.WebDcId);
+                    break;
+                default:
+                    await env.AuthenticateAsync();
+                    break;
             }
         }
 
@@ -153,6 +166,15 @@ async Task<int> Main(TdClient client, string[] args)
         var tdlRoot = TdlEnv.InitTdlRoot(logger);
         logger.ZLogInformation($"初始化完成, 数据目录: {tdlRoot}");
         return 0;
+    }
+    catch (TdException ex) when (ex.Message.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase))
+    {
+        // Telegram 限流 (FLOOD_WAIT): 换算出可重试时间, 不自动重试
+        var seconds = TdlEnv.ParseRetryAfter(ex);
+        var retryAt = DateTime.Now.AddSeconds(seconds);
+        logger.ZLogError($"Telegram 限流 (FLOOD_WAIT), 预计 {retryAt:HH:mm} 后可重试 (等待 {seconds / 60} 分钟): {ex.Message}");
+        Console.Error.WriteLine($"Telegram 限流 (FLOOD_WAIT): 预计 {retryAt:HH:mm} 后可重试 (约 {seconds / 60} 分钟)");
+        return 1;
     }
     catch (Exception ex)
     {
@@ -226,51 +248,65 @@ async Task<(int?, string?)> EnsureApiCredentialsAsync(
     return (apiId, apiHash);
 }
 
-async Task<string> EnsureAuthMethodAsync(
-    ILogger logger, bool checkOnly, string? phoneArg, string? botTokenArg, bool useQr)
+async Task<(string Method, string? WebToken, int WebDcId)> EnsureAuthMethodAsync(
+    ILogger logger, bool checkOnly, string? phoneArg, string? botTokenArg, bool useQr,
+    string? webTokenArg, int? webDcIdArg)
 {
-    var phone = phoneArg ?? GetUserEnv("tdl_phone");
-    var botToken = botTokenArg;
+    var webDcId = webDcIdArg ?? 2;
 
+    // 1. 命令行显式指定 (优先级: web-token > bot-token > phone > qr)
+    if (!string.IsNullOrWhiteSpace(webTokenArg))
+    {
+        return ("web", webTokenArg, webDcId);
+    }
     if (!string.IsNullOrWhiteSpace(botTokenArg))
     {
         SetUserEnv("tdl_bot_token", botTokenArg);
         logger.ZLogInformation($"已保存 tdl_bot_token");
-        return "bot";
+        return ("bot", null, webDcId);
     }
     if (!string.IsNullOrWhiteSpace(phoneArg))
     {
         SetUserEnv("tdl_phone", phoneArg);
         logger.ZLogInformation($"已保存 tdl_phone = {phoneArg}");
-        return "phone";
+        return ("phone", null, webDcId);
     }
-
-    // QR 强制登录: 不改配置, 直接返回
     if (useQr)
     {
-        return "qr";
+        return ("qr", null, webDcId);
     }
 
-    if (!string.IsNullOrWhiteSpace(botToken = GetUserEnv("tdl_bot_token")))
+    // 2. 已保存的配置
+    if (!string.IsNullOrWhiteSpace(GetUserEnv("tdl_bot_token")))
     {
-        return "bot";
+        return ("bot", null, webDcId);
     }
-    if (!string.IsNullOrWhiteSpace(phone))
+    if (!string.IsNullOrWhiteSpace(GetUserEnv("tdl_phone")))
     {
-        return "phone";
+        return ("phone", null, webDcId);
+    }
+    if (GetUserEnv("tdl_login_method") is "qr")
+    {
+        return ("qr", null, webDcId);
     }
 
     if (checkOnly)
     {
-        logger.ZLogWarning($"未配置登录方式: 可通过 --phone / --bot-token 保存, 或运行时用 --qr 扫码登录");
-        return "none";
+        logger.ZLogWarning($"未配置登录方式: 可通过 --phone / --bot-token 保存, 或运行时用 --qr 扫码 / --web-token Web 登录凭证登录");
+        return ("none", null, webDcId);
     }
 
-    // 交互式选择登录方式并持久化
+    // 3. 交互式选择登录方式并持久化
     var choice = AnsiConsole.Prompt(
         new SelectionPrompt<string>()
-            .Title("选择默认登录方式 (保存为用户级环境变量):")
-            .AddChoices(new[] { "手机号 + 验证码", "Bot Token", "仅本次 QR 码登录 (不保存)" }));
+            .Title("选择默认登录方式:")
+            .AddChoices(new[] {
+                "手机号 + 验证码",
+                "Bot Token",
+                "QR 码扫码登录 (保存为默认)",
+                "仅本次 QR 码扫码登录 (不保存)",
+                "仅本次 Web 登录凭证 (web token, 不保存)"
+            }));
 
     switch (choice)
     {
@@ -283,7 +319,7 @@ async Task<string> EnsureAuthMethodAsync(
             }
             SetUserEnv("tdl_phone", phoneInput);
             logger.ZLogInformation($"已保存 tdl_phone = {phoneInput}");
-            return "phone";
+            return ("phone", null, webDcId);
         case "Bot Token":
             Console.Write("输入 Bot Token: ");
             var tokenInput = Console.ReadLine()?.Trim();
@@ -293,9 +329,27 @@ async Task<string> EnsureAuthMethodAsync(
             }
             SetUserEnv("tdl_bot_token", tokenInput);
             logger.ZLogInformation($"已保存 tdl_bot_token");
-            return "bot";
+            return ("bot", null, webDcId);
+        case "QR 码扫码登录 (保存为默认)":
+            SetUserEnv("tdl_login_method", "qr");
+            logger.ZLogInformation($"已保存 tdl_login_method = qr");
+            return ("qr", null, webDcId);
+        case "仅本次 Web 登录凭证 (web token, 不保存)":
+            Console.Write("输入 Web 登录凭证 (web token): ");
+            var webTokenInput = Console.ReadLine()?.Trim();
+            if (string.IsNullOrWhiteSpace(webTokenInput))
+            {
+                throw new InvalidOperationException("Web 登录凭证不能为空");
+            }
+            Console.Write($"输入 DC 编号 (直接回车默认 {webDcId}): ");
+            var dcInput = Console.ReadLine()?.Trim();
+            if (int.TryParse(dcInput, out var dcParsed) && dcParsed > 0)
+            {
+                webDcId = dcParsed;
+            }
+            return ("web", webTokenInput, webDcId);
         default:
-            return "qr";
+            return ("qr", null, webDcId);
     }
 }
 
@@ -347,7 +401,8 @@ void PrintConfigSummary(int? apiId, string? apiHash, string authMethod, string p
     {
         "phone" => "手机号 + 验证码",
         "bot" => "Bot Token",
-        "qr" => "QR 码 (仅本次)",
+        "qr" => "QR 码扫码",
+        "web" => "Web 登录凭证 (仅本次)",
         _ => "[red]未配置[/]"
     });
     table.AddRow("tdl_proxy", $"{proxyHost}:{proxyPort}");

@@ -1,4 +1,6 @@
+#:package QRCoder@*
 using System.Text.RegularExpressions;
+using QRCoder;
 using Spectre.Console;
 using Framework.ZLogging;
 using Microsoft.Extensions.Logging;
@@ -191,9 +193,6 @@ public class TdlEnv
 
         _logger.ZLogInformation($"QR 码登录链接: {QrCodeLink}");
         Console.WriteLine();
-        Console.WriteLine("请在已登录的 Telegram 客户端中扫描以下二维码，或手动输入链接:");
-        Console.WriteLine($"  {QrCodeLink}");
-        Console.WriteLine();
         PrintQrCode(QrCodeLink);
         Console.WriteLine();
         Console.WriteLine("等待扫码确认... (在手机 Telegram: 设置 -> 设备 -> 扫描二维码)");
@@ -214,6 +213,45 @@ public class TdlEnv
         else
         {
             _logger.ZLogInformation($"QR 码登录成功");
+        }
+    }
+
+    /// <summary>
+    /// 使用 Telegram Web 登录凭证 (web token) 登录。
+    /// 对应 TDLib checkAuthenticationWebToken, 仅在 WaitPhoneNumber / WaitOtherDeviceConfirmation
+    /// 状态下可用; 凭证来自官方 Web 端, 为一次性/短时效数据, 不做持久化。
+    /// </summary>
+    /// <param name="webToken">Web 登录凭证。为空时交互式输入。</param>
+    /// <param name="dcId">凭证所属数据中心编号 (默认 2)。</param>
+    public async Task AuthenticateWithWebTokenAsync(string? webToken = null, int dcId = 2)
+    {
+        if (string.IsNullOrWhiteSpace(webToken))
+        {
+            Console.Write("输入 Web 登录凭证 (web token): ");
+            webToken = Console.ReadLine()?.Trim();
+        }
+        if (string.IsNullOrWhiteSpace(webToken))
+        {
+            throw new InvalidOperationException("Web 登录凭证不能为空");
+        }
+
+        _logger.ZLogInformation($"正在使用 Web 登录凭证登录 (dcId={dcId}, 当前状态: {_updateHandler.CurrentState})...");
+        await _client.ExecuteAsync(new TdApi.CheckAuthenticationWebToken
+        {
+            Token = webToken,
+            DcId = dcId
+        });
+
+        // 等待状态落定: 成功 → Ready (AuthNeeded=false); 开了两步验证 → WaitPassword
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!PasswordNeeded && AuthNeeded && sw.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            await Task.Delay(200);
+        }
+
+        if (PasswordNeeded)
+        {
+            await SubmitPasswordAsync();
         }
     }
 
@@ -454,20 +492,44 @@ public class TdlEnv
     }
 
     /// <summary>
-    /// 在终端显示 QR 码登录链接。
+    /// 在终端渲染可扫描的 QR 码登录链接 (QRCoder 生成矩阵, 半块字符绘制, 黑模块白底)。
     /// </summary>
     static void PrintQrCode(string data)
     {
-        AnsiConsole.MarkupLine("[cyan]┌──────────────────────────────────┐[/]");
-        AnsiConsole.MarkupLine("[cyan]│[/]  [yellow]请在手机 Telegram 扫描或输入链接[/]  [cyan]│[/]");
-        AnsiConsole.MarkupLine("[cyan]└──────────────────────────────────┘[/]");
+        using var generator = new QRCodeGenerator();
+        var qr = generator.CreateQrCode(data, QRCodeGenerator.ECCLevel.M);
+        var matrix = qr.ModuleMatrix;
+        var size = matrix.Count;
+
+        AnsiConsole.MarkupLineInterpolated($"[cyan]{'─',2} Telegram 登录二维码 {'─',16}[/]");
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"  [green]{data}[/]");
+
+        // 两行模块合并为一个半块字符: █(全黑) ▀(上黑) ▄(下黑) 空(全白)
+        for (var y = 0; y < size; y += 2)
+        {
+            var sb = new System.Text.StringBuilder("[black on white]  ");
+            for (var x = 0; x < size; x++)
+            {
+                var top = matrix[y][x];
+                var bottom = y + 1 < size && matrix[y + 1][x];
+                sb.Append((top, bottom) switch
+                {
+                    (true, true) => '█',
+                    (true, false) => '▀',
+                    (false, true) => '▄',
+                    _ => ' ',
+                });
+            }
+            sb.Append("  [/]");
+            AnsiConsole.MarkupLine(sb.ToString());
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLineInterpolated($"  或在手机 Telegram 中手动输入链接: [green]{data}[/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("  [grey]操作步骤:[/]");
         AnsiConsole.MarkupLine("  [grey]1. 打开手机 Telegram[/]");
         AnsiConsole.MarkupLine("  [grey]2. 设置 -> 设备 -> 扫描二维码[/]");
-
     }
     async Task ConfigureTdlibParameters(TdClient client, string outputPath, ILogger cbLogger)
     {

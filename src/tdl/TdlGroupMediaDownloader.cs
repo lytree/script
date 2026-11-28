@@ -9,8 +9,8 @@
 #:package tdlib.native@*
 #:package tdlib.native.win-x64@*
 #:package System.CommandLine@*
-#:package Spectre.Console@0.55.2
-#:package Spectre.Console.Ansi@0.55.2
+#:package Spectre.Console@*
+#:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
 #:package YLFramework.ZLogging@2.0.0-alpha.1
