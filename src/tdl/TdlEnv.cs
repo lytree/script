@@ -344,7 +344,7 @@ public class TdlEnv
         var factory = LoggerFactory.Create(logging =>
         {
             logging.SetMinimumLevel(LogLevel.Information);
-            logging.AddZLoggerSpectreConsoleAndFile(logFileName);
+            logging.AddSpectreConsoleAndFile(logFileName);
         });
         return factory.CreateLogger(loggerName);
     }

@@ -15,7 +15,7 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.7
+#:package YLFramework.ZLogging@2.0.0-alpha.1
 #:package Microsoft.EntityFrameworkCore.Sqlite@*
 #:package Microsoft.EntityFrameworkCore.Design@*
 

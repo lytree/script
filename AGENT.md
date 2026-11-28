@@ -16,7 +16,7 @@
 | SDK | .NET 10（本机实测 `10.0.401`） |
 | 包管理 | NuGet，源见 `NuGet.config` |
 | CLI 框架 | `System.CommandLine` 2.0 / `Spectre.Console` |
-| 日志 | `YLFramework.ZLogging`（`AddZLoggerSpectreConsoleAndFile`） |
+| 日志 | `YLFramework.ZLogging` 2.0.0-alpha.1（`AddSpectreConsoleAndFile`） |
 | 入口脚本 | `run.ps1`（PowerShell 7+，带 Tab 补全） |
 
 `NuGet.config` 里有一个**本机私有源** `F:\Code\Github\framework\nugets`（配合 `<clear />` 使用）。换机器时这个路径不存在会还原失败——改仓库前先确认，或临时注释掉该行。

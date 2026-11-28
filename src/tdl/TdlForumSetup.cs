@@ -13,7 +13,7 @@
 #:package Spectre.Console.Ansi@*
 #:package Microsoft.Extensions.Logging@*
 #:package ZLogger@*
-#:package YLFramework.ZLogging@1.0.3-alpha.7
+#:package YLFramework.ZLogging@2.0.0-alpha.1
 
 // 临时工具: 为目标群开启 Forum 话题功能并确保指定话题存在, 打印 t.me/c 链接
 // 用法: dotnet run src/tdl/TdlForumSetup.cs -- --target <邀请链接或用户名> --topic <话题名>
